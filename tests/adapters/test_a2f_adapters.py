@@ -24,8 +24,8 @@ from orchestrator.profile.face_stream_profile import FaceStreamProfile
 from orchestrator.utils.log import logging
 
 VERIFY = False
-WS_URL = os.environ.get("A2F_WS_URL", None)
-pytestmark = pytest.mark.skipif(WS_URL is None, reason="A2F_WS_URL is not set, skipping test")
+WS_URL = os.environ.get("A2F_WS_URL", "")
+pytestmark = pytest.mark.skipif(WS_URL == "", reason="A2F_WS_URL is not set, skipping test")
 
 # TODO: Restore non-streaming A2F tests when needed
 
@@ -238,8 +238,7 @@ async def test_audio2face_streaming_client_wav():
             If the A2F stream processing times out.
     """
     logger_cfg = dict(
-        logger_name="test_audio2face_streaming_client_wav",
-        console_level=logging.DEBUG,
+        logger_name="test_audio2face_streaming_client_wav", file_level=logging.DEBUG, logger_path="logs/pytest.log"
     )
     a2f_cfg = dict(
         type="Audio2FaceStreamingClient",
@@ -340,8 +339,7 @@ async def test_audio2face_streaming_client_pcm():
             If the A2F stream processing times out.
     """
     logger_cfg = dict(
-        logger_name="test_audio2face_streaming_client_pcm",
-        console_level=logging.DEBUG,
+        logger_name="test_audio2face_streaming_client_pcm", file_level=logging.DEBUG, logger_path="logs/pytest.log"
     )
     a2f_cfg = dict(
         type="Audio2FaceStreamingClient",
