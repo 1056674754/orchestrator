@@ -204,8 +204,39 @@ The system uses a Directed Acyclic Graph (DAG) architecture to manage complex AI
 
 ### Using Docker
 
-### Local Installation
+#### Recommended: Complete Backend Services with Docker Compose
 
+For the best experience, we recommend using Docker Compose to start the complete DLP3D backend services, which includes the Orchestrator along with all required dependencies (MongoDB, Audio2Face, Speech2Motion, etc.).
+
+Please follow the [Complete DLP3D Backend Services](https://github.com/dlp3d-ai/web_backend?tab=readme-ov-file#complete-dlp3d-backend-services) documentation to set up and run the entire backend infrastructure.
+
+#### Standalone Orchestrator Service
+
+If you need to run the Orchestrator service independently or configure advanced options, please refer to the [Docker Configuration Guide](docs/docker.md) for detailed setup instructions, environment variables, and configuration options.
+
+### Environment Setup
+
+For local development and deployment, please follow the detailed installation guide:
+
+📖 **[Complete Installation Guide](docs/install.md)**
+
+The installation guide provides step-by-step instructions for:
+- Setting up Python 3.10+ environment
+- Installing Protocol Buffers compiler
+- Configuring the development environment
+- Installing project dependencies
+
+### Local Development
+
+After completing the environment setup as described in the installation guide, you can start the service locally:
+
+```bash
+# Activate the conda environment
+conda activate orchestrator
+
+# Start the service
+python main.py --config_path configs/local.py
+```
 
 ## AI Services
 
