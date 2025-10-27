@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Literal, Tuple, Union
 
 import pytz
 
+from ...utils.log import logging, setup_logger
 from ...utils.super import Super
 
 
@@ -23,6 +24,8 @@ class DatabaseMemoryClient(Super, ABC):
     database operations.
     """
 
+    logger: logging.Logger = setup_logger(logger_name="DatabaseMemoryClient")
+
     def __init__(
         self,
         logger_cfg: Union[None, Dict[str, Any]] = None,
@@ -35,6 +38,7 @@ class DatabaseMemoryClient(Super, ABC):
                 Logger name will use the class name. Defaults to None.
         """
         Super.__init__(self, logger_cfg)
+        self.__class__.logger = self.logger
 
     async def get_cascade_memories(
         self,
@@ -96,6 +100,7 @@ class DatabaseMemoryClient(Super, ABC):
         disgust: Union[int, None] = None,
         surprise: Union[int, None] = None,
         shyness: Union[int, None] = None,
+        timezone: Union[str, None] = None,
     ) -> None:
         """Append chat history record.
 
@@ -106,7 +111,7 @@ class DatabaseMemoryClient(Super, ABC):
             character_id (str):
                 Character ID.
             unix_timestamp (float):
-                Unix timestamp for generating Beijing timezone timestamp string.
+                Unix timestamp for generating specified timezone timestamp string.
             role (Literal["user", "assistant"]):
                 Role type, user or assistant.
             content (str):
@@ -127,6 +132,8 @@ class DatabaseMemoryClient(Super, ABC):
                 Surprise value, only valid for assistant role. Defaults to None.
             shyness (Union[int, None], optional):
                 Shyness value, only valid for assistant role. Defaults to None.
+            timezone (Union[str, None], optional):
+                Timezone name. If None, defaults to "Asia/Shanghai". Defaults to None.
 
         Raises:
             ValueError:
@@ -543,17 +550,27 @@ class DatabaseMemoryClient(Super, ABC):
     def convert_unix_timestamp_to_str(
         cls,
         unix_timestamp: float,
+        timezone: Union[str, None] = None,
     ) -> str:
         """Convert Unix timestamp to string.
 
         Args:
             unix_timestamp (float):
                 Unix timestamp.
+            timezone (Union[str, None], optional):
+                Timezone name. If None, defaults to "Asia/Shanghai". Defaults to None.
 
         Returns:
             str:
-                Timestamp string in Beijing timezone format "YYYY-MM-DD HH:MM:SS,mmm".
+                Timestamp string in specified timezone format "YYYY-MM-DD HH:MM:SS,mmm".
         """
-        shanghai_tz = pytz.timezone("Asia/Shanghai")
-        time_str = datetime.fromtimestamp(unix_timestamp, shanghai_tz).strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+        if timezone is None:
+            timezone = "Asia/Shanghai"
+        elif timezone not in pytz.all_timezones:
+            cls.logger.warning(
+                f"Timezone name {timezone} not found in pytz.all_timezones" + ", using default timezone Asia/Shanghai"
+            )
+            timezone = "Asia/Shanghai"
+        target_tz = pytz.timezone(timezone)
+        time_str = datetime.fromtimestamp(unix_timestamp, target_tz).strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
         return time_str
