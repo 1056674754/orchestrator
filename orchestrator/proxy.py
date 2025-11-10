@@ -6,6 +6,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Tuple, Union
 
+from prometheus_client import CollectorRegistry, Histogram
+
 from .aggregator.builder import (
     BlendshapesAggregator,
     CallbackAggregator,
@@ -96,6 +98,7 @@ class Proxy(Super):
         max_workers: int = 4,
         thread_pool_executor: ThreadPoolExecutor | None = None,
         style_file: str = "configs/voice_style.json",
+        enable_prometheus_registry: bool = False,
     ) -> None:
         """Initialize the orchestrator proxy with all required adapters and
         configurations.
@@ -157,6 +160,9 @@ class Proxy(Super):
             style_file (str, optional):
                 Path to the voice style configuration file.
                 Defaults to "configs/voice_style.json".
+            enable_prometheus_registry (bool, optional):
+                Whether to enable the Prometheus metrics registry.
+                Defaults to False.
         """
         Super.__init__(self, logger_cfg=logger_cfg)
         self.sleep_time = sleep_time
@@ -165,9 +171,12 @@ class Proxy(Super):
             thread_pool_executor if thread_pool_executor is not None else ThreadPoolExecutor(max_workers=max_workers)
         )
         self.executor_external = True if thread_pool_executor is not None else False
+        self.enable_prometheus_registry = enable_prometheus_registry
+        self._setup_prometheus_registry()
 
         self.a2f_cfg = a2f_cfg.copy()
         self.a2f_cfg["logger_cfg"] = logger_cfg
+        self.a2f_cfg["latency_histogram"] = self.a2f_latency_histogram
         if ExecutorRegistry.validate_class(self.a2f_cfg["type"]):
             self.a2f_cfg["thread_pool_executor"] = self.executor
         self.a2f_adapter = build_audio2face_adapter(self.a2f_cfg)
@@ -192,6 +201,8 @@ class Proxy(Super):
         for memory_key, memory_cfg in memory_adapters.items():
             self.memory_cfgs[memory_key] = memory_cfg.copy()
             self.memory_cfgs[memory_key]["logger_cfg"] = logger_cfg
+            self.memory_cfgs[memory_key]["input_token_number_histogram"] = self.memory_input_token_number_histogram
+            self.memory_cfgs[memory_key]["output_token_number_histogram"] = self.memory_output_token_number_histogram
             self.memory_cfgs[memory_key]["db_client"] = self.db_memory_client
             if ExecutorRegistry.validate_class(self.memory_cfgs[memory_key]["type"]):
                 self.memory_cfgs[memory_key]["thread_pool_executor"] = self.executor
@@ -215,6 +226,13 @@ class Proxy(Super):
         for conversation_key, conversation_cfg in conversation_adapters.items():
             self.conversation_cfgs[conversation_key] = conversation_cfg.copy()
             self.conversation_cfgs[conversation_key]["logger_cfg"] = logger_cfg
+            self.conversation_cfgs[conversation_key]["latency_histogram"] = self.conversation_latency_histogram
+            self.conversation_cfgs[conversation_key][
+                "input_token_number_histogram"
+            ] = self.conversation_input_token_number_histogram
+            self.conversation_cfgs[conversation_key][
+                "output_token_number_histogram"
+            ] = self.conversation_output_token_number_histogram
             if ExecutorRegistry.validate_class(self.conversation_cfgs[conversation_key]["type"]):
                 self.conversation_cfgs[conversation_key]["thread_pool_executor"] = self.executor
             self.conversation_adapters[conversation_key] = build_conversation_adapter(
@@ -223,6 +241,7 @@ class Proxy(Super):
 
         self.s2m_cfg = s2m_cfg.copy()
         self.s2m_cfg["logger_cfg"] = logger_cfg
+        self.s2m_cfg["latency_histogram"] = self.s2m_latency_histogram
         if ExecutorRegistry.validate_class(self.s2m_cfg["type"]):
             self.s2m_cfg["thread_pool_executor"] = self.executor
         self.s2m_adapter = build_speech2motion_adapter(self.s2m_cfg)
@@ -232,6 +251,7 @@ class Proxy(Super):
         for tts_key, tts_cfg in tts_adapters.items():
             self.tts_cfgs[tts_key] = tts_cfg.copy()
             self.tts_cfgs[tts_key]["logger_cfg"] = logger_cfg
+            self.tts_cfgs[tts_key]["latency_histogram"] = self.tts_latency_histogram
             if ExecutorRegistry.validate_class(self.tts_cfgs[tts_key]["type"]):
                 self.tts_cfgs[tts_key]["thread_pool_executor"] = self.executor
             self.tts_adapters[tts_key] = build_tts_adapter(self.tts_cfgs[tts_key])
@@ -241,6 +261,7 @@ class Proxy(Super):
         for classfication_key, classfication_cfg in classfication_adapters.items():
             self.classfication_cfgs[classfication_key] = classfication_cfg.copy()
             self.classfication_cfgs[classfication_key]["logger_cfg"] = logger_cfg
+            self.classfication_cfgs[classfication_key]["latency_histogram"] = self.classification_latency_histogram
             if ExecutorRegistry.validate_class(self.classfication_cfgs[classfication_key]["type"]):
                 self.classfication_cfgs[classfication_key]["thread_pool_executor"] = self.executor
             self.classfication_adapters[classfication_key] = build_classification_adapter(
@@ -252,6 +273,7 @@ class Proxy(Super):
         for reaction_key, reaction_cfg in reaction_adapters.items():
             self.reaction_cfgs[reaction_key] = reaction_cfg.copy()
             self.reaction_cfgs[reaction_key]["logger_cfg"] = logger_cfg
+            self.reaction_cfgs[reaction_key]["latency_histogram"] = self.reaction_latency_histogram
             if ExecutorRegistry.validate_class(self.reaction_cfgs[reaction_key]["type"]):
                 self.reaction_cfgs[reaction_key]["thread_pool_executor"] = self.executor
             self.reaction_adapters[reaction_key] = build_reaction_adapter(self.reaction_cfgs[reaction_key])
@@ -298,6 +320,118 @@ class Proxy(Super):
         """Destructor, cleanup thread pool executor."""
         if not self.executor_external:
             self.executor.shutdown(wait=True)
+
+    def _setup_prometheus_registry(self) -> None:
+        """Initialize Prometheus metrics registry and histograms for latency
+        and token number monitoring.
+
+        Creates a Prometheus CollectorRegistry and configures Histogram metrics
+        for monitoring latency and token usage across different adapter types.
+        The metrics include:
+        - Audio2Face (a2f) adapter latency
+        - Speech2Motion (s2m) adapter latency
+        - Text-to-Speech (tts) adapter latency (with adapter label)
+        - Conversation LLM adapter latency (with adapter and user_id labels)
+        - Conversation LLM input/output token numbers (with adapter and user_id labels)
+        - Reaction LLM adapter latency (with adapter label)
+        - Classification adapter latency (with adapter label)
+        - Memory adapter input/output token numbers (with adapter label)
+
+        Bucket ranges are configured differently based on expected value ranges:
+        - Animation adapters (a2f, s2m, classification): 0.2s to 2.0s (200ms to 20000ms)
+        - Text-to-Speech adapters: 0.2s to 5.0s (200ms to 20000ms)
+        - LLM adapters (conversation, reaction): 0.5s to 10.0s (500ms to 20000ms)
+        - Token numbers: 50 to 5000 tokens (50 token increments)
+
+        If Prometheus registry is disabled (enable_prometheus_registry is False),
+        all histogram attributes are set to None.
+        """
+        if self.enable_prometheus_registry:
+            self.prometheus_registry = CollectorRegistry()
+            animation_latency_bucket = [x / 1000.0 for x in range(200, 20000, 200)]
+            llm_latency_bucket = [x / 1000.0 for x in range(500, 20000, 500)]
+            tts_latency_bucket = [x / 1000.0 for x in range(200, 20000, 200)]
+            llm_token_number_bucket = [x for x in range(50, 5000, 50)]
+            self.a2f_latency_histogram = Histogram(
+                "a2f_latency",
+                "Latency of audio2face adapter",
+                registry=self.prometheus_registry,
+                buckets=animation_latency_bucket,
+            )
+            self.s2m_latency_histogram = Histogram(
+                "s2m_latency",
+                "Latency of speech2motion adapter",
+                registry=self.prometheus_registry,
+                buckets=animation_latency_bucket,
+            )
+            self.tts_latency_histogram = Histogram(
+                "tts_latency",
+                "Latency of text2speech adapters",
+                labelnames=["adapter"],
+                registry=self.prometheus_registry,
+                buckets=tts_latency_bucket,
+            )
+            self.conversation_latency_histogram = Histogram(
+                "conversation_latency",
+                "Latency of conversation LLM adapters",
+                labelnames=["adapter", "user_id"],
+                registry=self.prometheus_registry,
+                buckets=llm_latency_bucket,
+            )
+            self.conversation_input_token_number_histogram = Histogram(
+                "conversation_input_token_number",
+                "Input token number of conversation LLM adapters",
+                labelnames=["adapter", "user_id"],
+                registry=self.prometheus_registry,
+                buckets=llm_token_number_bucket,
+            )
+            self.conversation_output_token_number_histogram = Histogram(
+                "conversation_output_token_number",
+                "Output token number of conversation LLM adapters",
+                labelnames=["adapter", "user_id"],
+                registry=self.prometheus_registry,
+                buckets=llm_token_number_bucket,
+            )
+            self.reaction_latency_histogram = Histogram(
+                "reaction_latency",
+                "Latency of reaction LLM adapters",
+                labelnames=["adapter"],
+                registry=self.prometheus_registry,
+                buckets=llm_latency_bucket,
+            )
+            self.classification_latency_histogram = Histogram(
+                "classification_latency",
+                "Latency of classification adapters",
+                labelnames=["adapter"],
+                registry=self.prometheus_registry,
+                buckets=animation_latency_bucket,
+            )
+            self.memory_input_token_number_histogram = Histogram(
+                "memory_input_token_number",
+                "Input token number of memory adapters",
+                labelnames=["adapter"],
+                registry=self.prometheus_registry,
+                buckets=llm_token_number_bucket,
+            )
+            self.memory_output_token_number_histogram = Histogram(
+                "memory_output_token_number",
+                "Output token number of memory adapters",
+                labelnames=["adapter"],
+                registry=self.prometheus_registry,
+                buckets=llm_token_number_bucket,
+            )
+        else:
+            self.prometheus_registry = None
+            self.a2f_latency_histogram = None
+            self.s2m_latency_histogram = None
+            self.tts_latency_histogram = None
+            self.conversation_latency_histogram = None
+            self.conversation_input_token_number_histogram = None
+            self.conversation_output_token_number_histogram = None
+            self.reaction_latency_histogram = None
+            self.classification_latency_histogram = None
+            self.memory_input_token_number_histogram = None
+            self.memory_output_token_number_histogram = None
 
     async def start_streamable_instances(self) -> None:
         """Start all streamable adapter instances.
@@ -376,6 +510,7 @@ class Proxy(Super):
         user_id = request["user_id"]
         conf = dict(
             start_time=0.0,
+            user_id=user_id,
             # for tts
             chunk_n_char_lowerbound=request.get("chunk_n_char_lowerbound", 10),
             chunk_n_char_lowerbound_en=request.get("chunk_n_char_lowerbound_en", 25),
@@ -554,6 +689,7 @@ class Proxy(Super):
         frame_rate = request["frame_rate"]
         conf = dict(
             start_time=0.0,
+            user_id=user_id,
             # for tts
             chunk_n_char_lowerbound=request.get("chunk_n_char_lowerbound", 10),
             chunk_n_char_lowerbound_en=request.get("chunk_n_char_lowerbound_en", 25),
@@ -935,6 +1071,7 @@ class Proxy(Super):
         frame_rate = request["frame_rate"]
         conf = dict(
             start_time=0.0,
+            user_id=user_id,
             # for s2m
             max_front_extension_duration=request["max_front_extension_duration"],
             max_rear_extension_duration=request["max_rear_extension_duration"],
@@ -1167,6 +1304,7 @@ class Proxy(Super):
         user_id = request["user_id"]
         conf = dict(
             start_time=0.0,
+            user_id=user_id,
             # for tts
             chunk_n_char_lowerbound=request.get("chunk_n_char_lowerbound", 10),
             chunk_n_char_lowerbound_en=request.get("chunk_n_char_lowerbound_en", 25),
@@ -1487,6 +1625,7 @@ class Proxy(Super):
         user_id = request["user_id"]
         conf = dict(
             start_time=0.0,
+            user_id=user_id,
             # for tts
             chunk_n_char_lowerbound=request.get("chunk_n_char_lowerbound", 10),
             # for s2m

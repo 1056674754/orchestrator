@@ -6,6 +6,7 @@ from typing import Any, Dict, Union
 
 import httpx
 import openai
+from prometheus_client import Histogram
 
 from ..data_structures.conversation import ConversationChunkBody, RejectChunkBody
 from ..utils.exception import MissingAPIKeyException
@@ -36,10 +37,13 @@ class OpenAIConversationClient(ConversationAdapter):
         sleep_time: float = 0.01,
         clean_interval: float = 10.0,
         expire_time: float = 120.0,
-        logger_cfg: Union[None, Dict[str, Any]] = None,
-        enable_bracket_filter: bool = True,
         max_workers: int = 1,
         thread_pool_executor: ThreadPoolExecutor | None = None,
+        latency_histogram: Histogram | None = None,
+        input_token_number_histogram: Histogram | None = None,
+        output_token_number_histogram: Histogram | None = None,
+        logger_cfg: Union[None, Dict[str, Any]] = None,
+        enable_bracket_filter: bool = True,
         bracket_pairs: list[tuple[str, str]] = [("*", "*"), ("(", ")"), ("[", "]"), ("{", "}"), ("「", "」"), ("（", "）")],
     ):
         """Initialize the OpenAI conversation client.
@@ -70,16 +74,28 @@ class OpenAIConversationClient(ConversationAdapter):
             expire_time (float, optional):
                 The time to expire requests in seconds.
                 Defaults to 120.0.
-            logger_cfg (Union[None, Dict[str, Any]], optional):
-                Logger configuration. Defaults to None.
-            enable_bracket_filter (bool, optional):
-                Whether to enable bracket content filtering. Defaults to True.
             max_workers (int, optional):
                 The maximum number of worker threads.
                 Defaults to 1.
             thread_pool_executor (ThreadPoolExecutor | None, optional):
                 External thread pool executor to use.
                 Defaults to None.
+            latency_histogram (Histogram | None, optional):
+                Prometheus Histogram metric for recording request latency distribution
+                in seconds. If provided, latency metrics will be collected for monitoring
+                purposes. Defaults to None.
+            input_token_number_histogram (Histogram | None, optional):
+                Prometheus Histogram metric for recording input token count distribution
+                per request. If provided, input token usage metrics will be collected for
+                monitoring purposes. Defaults to None.
+            output_token_number_histogram (Histogram | None, optional):
+                Prometheus Histogram metric for recording output token count distribution
+                per request. If provided, output token usage metrics will be collected for
+                monitoring purposes. Defaults to None.
+            logger_cfg (Union[None, Dict[str, Any]], optional):
+                Logger configuration. Defaults to None.
+            enable_bracket_filter (bool, optional):
+                Whether to enable bracket content filtering. Defaults to True.
             bracket_pairs (list[tuple[str, str]], optional):
                 Bracket pairs to filter. Defaults to [('*', '*'), ('(', ')'), ('[', ']'), ('{', '}'), ('「', '」'), ('（', '）')].
         """
@@ -93,6 +109,9 @@ class OpenAIConversationClient(ConversationAdapter):
             sleep_time=sleep_time,
             clean_interval=clean_interval,
             expire_time=expire_time,
+            latency_histogram=latency_histogram,
+            input_token_number_histogram=input_token_number_histogram,
+            output_token_number_histogram=output_token_number_histogram,
             logger_cfg=logger_cfg,
         )
         self.openai_model_name = openai_model_name
@@ -199,6 +218,7 @@ class OpenAIConversationClient(ConversationAdapter):
                 await asyncio.sleep(self.sleep_time)
                 llm_client = task_space.get("llm_client", None)
 
+            user_id = task_space["user_id"]
             chat_rsp_stream = await llm_client.chat.completions.create(
                 model=model_name_override if model_name_override else self.openai_model_name,
                 messages=[
@@ -214,10 +234,13 @@ class OpenAIConversationClient(ConversationAdapter):
                 ],
                 temperature=1,
                 stream=True,
+                stream_options={"include_usage": True},
             )
+            input_token_number = 0
+            output_token_number = 0
             loop = asyncio.get_event_loop()
             async for chunk in chat_rsp_stream:
-                if chunk.choices[0].delta.content is not None:
+                if len(chunk.choices) > 0 and chunk.choices[0].delta.content is not None:
                     text_seg = chunk.choices[0].delta.content
 
                     # Apply bracket filter
@@ -246,7 +269,18 @@ class OpenAIConversationClient(ConversationAdapter):
                                     )
                                 latency = time.time() - start_time
                                 self.logger.debug(f"request {request_id} first chunk latency: {latency:.2f} seconds")
+                                if self.latency_histogram:
+                                    self.latency_histogram.labels(adapter=self.name, user_id=user_id).observe(latency)
                         asyncio.gather(*coroutines)
+                if chunk.usage:
+                    input_token_number += chunk.usage.prompt_tokens
+                    output_token_number += chunk.usage.completion_tokens
+            if self.input_token_number_histogram:
+                self.input_token_number_histogram.labels(adapter=self.name, user_id=user_id).observe(input_token_number)
+            if self.output_token_number_histogram:
+                self.output_token_number_histogram.labels(adapter=self.name, user_id=user_id).observe(
+                    output_token_number
+                )
             return chat_rsp
         except Exception as e:
             msg = f"Error in streaming chat: {e}"
@@ -311,10 +345,14 @@ class OpenAIConversationClient(ConversationAdapter):
                 temperature=1,
                 max_tokens=1000,
                 stream=True,
+                stream_options={"include_usage": True},
             )
+            input_token_number = 0
+            output_token_number = 0
+            user_id = task_space["user_id"]
             loop = asyncio.get_event_loop()
             async for chunk in reject_rsp_stream:
-                if chunk.choices[0].delta.content is not None:
+                if len(chunk.choices) > 0 and chunk.choices[0].delta.content is not None:
                     text_seg = chunk.choices[0].delta.content
 
                     # Apply bracket filter
@@ -340,8 +378,19 @@ class OpenAIConversationClient(ConversationAdapter):
                                     )
                                 latency = time.time() - start_time
                                 self.logger.debug(f"request {request_id} first chunk latency: {latency:.2f} seconds")
+                                if self.latency_histogram:
+                                    self.latency_histogram.labels(adapter=self.name, user_id=user_id).observe(latency)
                         asyncio.gather(*coroutines)
                         reject_rsp += text_seg
+                if chunk.usage:
+                    input_token_number += chunk.usage.prompt_tokens
+                    output_token_number += chunk.usage.completion_tokens
+            if self.input_token_number_histogram:
+                self.input_token_number_histogram.labels(adapter=self.name, user_id=user_id).observe(input_token_number)
+            if self.output_token_number_histogram:
+                self.output_token_number_histogram.labels(adapter=self.name, user_id=user_id).observe(
+                    output_token_number
+                )
             return reject_rsp
         except Exception as e:
             msg = f"Error in streaming reject: {e}"
