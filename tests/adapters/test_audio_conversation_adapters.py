@@ -8,6 +8,7 @@ from typing import List, Union
 
 import numpy as np
 import pytest
+import pytest_asyncio
 import yaml
 
 from orchestrator.conversation.builder import build_conversation_adapter
@@ -30,7 +31,7 @@ MONGODB_MEMORY_USER = os.environ.get("MONGODB_MEMORY_USER")
 MONGODB_MEMORY_PASSWORD = os.environ.get("MONGODB_MEMORY_PASSWORD")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def mongodb_memory_client() -> MongoDBMemoryClient:
     """Create a MongoDBMemoryClient instance for testing.
 
@@ -49,7 +50,7 @@ def mongodb_memory_client() -> MongoDBMemoryClient:
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_test_memory():
     """Set up test memory before all tests start.
 
@@ -63,6 +64,7 @@ async def setup_test_memory():
         username=MONGODB_MEMORY_USER,
         password=MONGODB_MEMORY_PASSWORD,
         database=(MONGODB_MEMORY_DB or "character"),
+        auth_database=MONGODB_AUTH_DATABASE,
         logger_cfg={"console_level": logging.DEBUG},
     )
 
