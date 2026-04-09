@@ -668,7 +668,7 @@ async def test_sensenova_omni_stream(
         type="SenseNovaOmniConversationClient",
         name="sensenovaomni_client",
         agent_prompts_file="configs/agent_prompts.yaml",
-        wss_url="wss://api-gai.sensetime.com/agent-5o/duplex/ws2",
+        wss_url="wss://api.sensenova.cn/agent-5o/duplex/ws2",
         logger_cfg=logger_cfg,
     )
     cascade_memories = await test_memory_adapter.db_client.get_cascade_memories(

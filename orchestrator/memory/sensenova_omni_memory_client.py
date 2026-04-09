@@ -32,7 +32,7 @@ class SenseNovaOmniMemoryClient(BaseMemoryAdapter):
         self,
         name: str,
         db_client: DatabaseMemoryClient,
-        wss_url: str = "wss://api-gai.sensetime.com/agent-5o/duplex/ws2",
+        wss_url: str = "wss://api.sensenova.cn/agent-5o/duplex/ws2",
         proxy_url: Union[None, str] = None,
         timeout: float = 10.0,
         conversation_char_threshold: int = 10000,
@@ -281,7 +281,7 @@ class SenseNovaOmniMemoryClient(BaseMemoryAdapter):
 
             loop = asyncio.get_running_loop()
             jwt_token = await loop.run_in_executor(self.executor, self._gen_token, iss, secret)
-            wss_url_with_token = f"{self.wss_url}?jwt={jwt_token}"
+            wss_url_with_token = f"{self.wss_url}?signature={jwt_token}"
             if self.__class__._ssl_context_cache is None:
                 ssl_context = await loop.run_in_executor(self.executor, ssl.create_default_context)
                 ssl_context.check_hostname = False
@@ -289,7 +289,7 @@ class SenseNovaOmniMemoryClient(BaseMemoryAdapter):
                 self.__class__._ssl_context_cache = ssl_context
             else:
                 ssl_context = self.__class__._ssl_context_cache
-            ws = await websockets.connect(wss_url_with_token, ssl=ssl_context)
+            ws = await websockets.connect(wss_url_with_token, ssl=ssl_context, open_timeout=30)
 
             session_id = await self._ws_create_session(ws)
 

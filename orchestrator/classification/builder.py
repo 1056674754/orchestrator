@@ -2,6 +2,7 @@ from .classification_adapter import ClassificationAdapter
 from .deepseek_classification_client import DeepSeekClassificationClient
 from .gemini_classification_client import GeminiClassificationClient
 from .openai_classification_client import OpenAIClassificationClient
+from .qwen_classification_client import QwenClassificationClient
 from .sensechat_classification_client import SenseChatClassificationClient
 from .sensenova_classification_client import SenseNovaClassificationClient
 from .sensenova_omni_classification_client import SenseNovaOmniClassificationClient
@@ -11,6 +12,7 @@ _CLASSIFICATION_ADAPTERS = dict(
     OpenAIClassificationClient=OpenAIClassificationClient,
     XAIClassificationClient=XAIClassificationClient,
     GeminiClassificationClient=GeminiClassificationClient,
+    QwenClassificationClient=QwenClassificationClient,
     SenseNovaOmniClassificationClient=SenseNovaOmniClassificationClient,
     SenseNovaClassificationClient=SenseNovaClassificationClient,
     SenseChatClassificationClient=SenseChatClassificationClient,

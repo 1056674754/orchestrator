@@ -420,7 +420,7 @@ class DatabaseMemoryClient(Super, ABC):
     async def set_relationship(
         self,
         character_id: str,
-        relationship: Literal["Stranger", "Acquaintance", "Friend", "Situationship", "Lover"],
+        relationship: Literal["Disliked", "Stranger", "Acquaintance", "Friend", "Situationship", "Lover"],
         score: int,
     ) -> None:
         """Set character relationship.
@@ -431,7 +431,7 @@ class DatabaseMemoryClient(Super, ABC):
         Args:
             character_id (str):
                 Character ID.
-            relationship (Literal["Stranger", "Acquaintance", "Friend", "Situationship", "Lover"]):
+            relationship (Literal["Disliked", "Stranger", "Acquaintance", "Friend", "Situationship", "Lover"]):
                 Relationship type.
             score (int):
                 Relationship score.

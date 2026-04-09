@@ -50,6 +50,8 @@ orchestrator/
 │   ├── audio_conversation_adapter.py  # Audio conversation adapter base class
 │   ├── openai_conversation_client.py  # OpenAI text conversation client
 │   ├── openai_audio_client.py         # OpenAI audio conversation client
+│   ├── qwen_conversation_client.py    # Alibaba Bailian text conversation client
+│   ├── qwen_omni_realtime_conversation_client.py # Alibaba Bailian realtime omni client
 │   ├── anthropic_conversation_client.py # Anthropic conversation client
 │   ├── gemini_conversation_client.py   # Gemini conversation client
 │   ├── xai_conversation_client.py      # xAI conversation client
@@ -60,8 +62,10 @@ orchestrator/
 ├── generation/                # Generation management module
 │   ├── speech_recognition/    # Speech Recognition (ASR)
 │   │   ├── asr_adapter.py     # ASR adapter base class
-│   │   ├── huoshan_asr_client.py # Volcano Engine ASR
+│   │   ├── huoshan_asr_client.py # Volcano Engine legacy ASR
+│   │   ├── huoshan_bigasr_client.py # Volcano Engine duplex bigmodel ASR
 │   │   ├── openai_realtime_asr_client.py # OpenAI real-time ASR
+│   │   ├── qwen_realtime_asr_client.py # Alibaba Bailian real-time ASR
 │   │   ├── sensetime_asr_client.py      # SenseTime ASR
 │   │   └── softsugar_asr_client.py      # Softsugar ASR
 │   ├── text2speech/          # Text-to-Speech (TTS)
@@ -251,6 +255,8 @@ python main.py --config_path configs/local.py
 | Google | `GeminiConversationClient` | `gemini-2.5-flash-lite` |
 | DeepSeek | `DeepSeekConversationClient` | `deepseek-chat` |
 | xAI | `XAIConversationClient` | `grok-3` |
+| Alibaba Bailian | `QwenConversationClient` | `qwen-turbo-latest` |
+| Alibaba Bailian | `QwenOmniRealtimeConversationClient` | `qwen3.5-omni-plus-realtime` |
 | SenseNova | `SenseChatConversationClient` | `SenseChat-5-1202` (Large Language Model) |
 | SenseNova | `SenseNovaConversationClient` | `SenseNova-V6-5-Pro` (Multimodal Model) |
 | SenseNova | `SenseNovaOmniConversationClient` | `SenseNova-V6-5-Omni` (Real-time Interactive Multimodal Model) |
@@ -260,7 +266,8 @@ python main.py --config_path configs/local.py
 | Provider | Adapter Class |
 |----------|---------------|
 | OpenAI | `OpenAIRealtimeASRClient` |
-| Volcano Engine | `HuoshanASRClient` |
+| Alibaba Bailian | `QwenRealtimeASRClient` |
+| Volcano Engine | `HuoshanBigmodelASRClient` |
 | SenseTime | `SensetimeASRClient` |
 | Softsugar | `SoftSugarASRClient` |
 

@@ -32,7 +32,7 @@ class SenseNovaOmniClassificationClient(ClassificationAdapter):
         self,
         name: str,
         motion_keywords: Union[str, list[str], None],
-        wss_url: str = "wss://api-gai.sensetime.com/agent-5o/duplex/ws2",
+        wss_url: str = "wss://api.sensenova.cn/agent-5o/duplex/ws2",
         proxy_url: Union[None, str] = None,
         timeout: float = 2.0,
         max_workers: int = 1,
@@ -49,7 +49,7 @@ class SenseNovaOmniClassificationClient(ClassificationAdapter):
                 The motion keywords.
             wss_url (str, optional):
                 WSS URL for the SenseNova Omni API.
-                Defaults to "wss://api-gai.sensetime.com/agent-5o/duplex/ws2".
+                Defaults to "wss://api.sensenova.cn/agent-5o/duplex/ws2".
             proxy_url (Union[None, str], optional):
                 The proxy URL for the SenseNova Omni API.
                 Defaults to None, use no proxy.
@@ -259,7 +259,7 @@ class SenseNovaOmniClassificationClient(ClassificationAdapter):
         try:
             loop = asyncio.get_running_loop()
             jwt_token = await loop.run_in_executor(self.executor, self._gen_token, iss, secret)
-            wss_url_with_token = f"{self.wss_url}?jwt={jwt_token}"
+            wss_url_with_token = f"{self.wss_url}?signature={jwt_token}"
             if self.__class__._ssl_context_cache is None:
                 ssl_context = await loop.run_in_executor(self.executor, ssl.create_default_context)
                 ssl_context.check_hostname = False
@@ -267,7 +267,7 @@ class SenseNovaOmniClassificationClient(ClassificationAdapter):
                 self.__class__._ssl_context_cache = ssl_context
             else:
                 ssl_context = self.__class__._ssl_context_cache
-            ws = await websockets.connect(wss_url_with_token, ssl=ssl_context)
+            ws = await websockets.connect(wss_url_with_token, ssl=ssl_context, open_timeout=30)
 
             session_id = await self._ws_create_session(ws)
 

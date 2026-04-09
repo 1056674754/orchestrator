@@ -526,7 +526,9 @@ class ReactionAdapter(Streamable):
         """
         new_relationship = relationship.model_copy()
         new_relationship.score += relationship_delta
-        if new_relationship.score < acquaintance_threshold:
+        if new_relationship.score < 0:
+            new_relationship.stage = "Disliked"
+        elif new_relationship.score < acquaintance_threshold:
             new_relationship.stage = "Stranger"
         elif new_relationship.score < friend_threshold:
             new_relationship.stage = "Acquaintance"

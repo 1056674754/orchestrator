@@ -1,5 +1,8 @@
 import asyncio
+import base64
 import gzip
+import hashlib
+import hmac
 import json
 import socket
 import time
@@ -50,6 +53,7 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
     NO_SERIALIZATION = 0b0000
     JSON_SERIALIZATION = 0b0001
     GZIP_COMPRESSION = 0b0001
+    SIGNATURE_USER_AGENT = "DLP3D-HuoshanASR/1.0"
     ExecutorRegistry.register_class("HuoshanASRClient")
 
     def __init__(
@@ -168,6 +172,34 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
         }
         return req_dict
 
+    def _build_signature_authorization(
+        self,
+        token: str,
+        secret_key: str,
+        request_bytes: bytes,
+        full_client_request: bytes,
+    ) -> dict[str, str]:
+        """Build the official HMAC256 authorization header for WebSocket ASR.
+
+        Huoshan's WebSocket signature auth requires signing the request line,
+        selected headers, and the first binary frame body. In practice the
+        server accepts the complete first frame payload for `/api/v2/asr`.
+        """
+        _ = request_bytes
+        request_line = "GET /api/v2/asr HTTP/1.1\n".encode("utf-8")
+        user_agent = self.__class__.SIGNATURE_USER_AGENT.encode("utf-8")
+        signing_bytes = request_line + user_agent + b"\n" + full_client_request
+        digest = hmac.new(secret_key.encode("utf-8"), signing_bytes, hashlib.sha256).digest()
+        mac = base64.urlsafe_b64encode(digest).decode("utf-8")
+        authorization = (
+            f'HMAC256; access_token="{token}"; mac="{mac}"; h="User-Agent"'
+        )
+        return {
+            "Authorization": authorization,
+            "Accept": "*/*",
+            "User-Agent": self.__class__.SIGNATURE_USER_AGENT,
+        }
+
     async def _create_connection(self, request_id: str, cur_time: float) -> None:
         """Create a connection to the server.
 
@@ -179,6 +211,7 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
         """
         app_id = self.input_buffer[request_id].get("api_keys", {}).get("huoshan_app_id", "")
         token = self.input_buffer[request_id].get("api_keys", {}).get("huoshan_token", "")
+        secret_key = self.input_buffer[request_id].get("api_keys", {}).get("huoshan_secret_key", "")
         if not app_id or not token:
             msg = "Huoshan app ID or token is not found in the API keys."
             self.logger.error(msg)
@@ -197,9 +230,24 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
         full_client_request.extend((len(request_bytes)).to_bytes(4, "big"))
         # payload
         full_client_request.extend(request_bytes)
-        token_header = {"Authorization": "Bearer; {}".format(token)}
+        auth_headers = {"Authorization": "Bearer; {}".format(token)}
+        auth_mode = "token"
+        if secret_key:
+            auth_headers = self._build_signature_authorization(
+                token=token,
+                secret_key=secret_key,
+                request_bytes=request_bytes,
+                full_client_request=bytes(full_client_request),
+            )
+            auth_mode = "signature"
         try:
-            ws = await websockets.connect(self.wss_url, additional_headers=token_header, max_size=100 * 1024 * 1024)
+            self.logger.info(
+                "Connecting to Huoshan ASR via %s auth for request %s with cluster %s",
+                auth_mode,
+                request_id,
+                self.cluster_id,
+            )
+            ws = await websockets.connect(self.wss_url, additional_headers=auth_headers, max_size=100 * 1024 * 1024)
             await ws.send(full_client_request)
             res = await ws.recv()
             result = self._parse_response(res)
@@ -226,14 +274,28 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
             seq_number (int):
                 The sequence number of the audio chunk.
         """
-        dag = self.input_buffer[request_id]["dag"]
-        ws_client = self.input_buffer[request_id].get("ws_client", None)
+        request_state = self.input_buffer.get(request_id)
+        if request_state is None:
+            self.logger.warning("Request %s not found in input buffer before sending PCM", request_id)
+            return
+        dag = request_state["dag"]
+        ws_client = request_state.get("ws_client", None)
         while ws_client is None:
-            if self.input_buffer[request_id]["connection_failed"]:
+            request_state = self.input_buffer.get(request_id)
+            if request_state is None:
+                self.logger.warning("Request %s disappeared while waiting for ASR websocket", request_id)
+                return
+            if request_state["connection_failed"]:
                 return
             await asyncio.sleep(self.sleep_time)
-            ws_client = self.input_buffer[request_id].get("ws_client", None)
-        while self.input_buffer[request_id]["chunk_sent_to_server"] < seq_number:
+            ws_client = request_state.get("ws_client", None)
+        while True:
+            request_state = self.input_buffer.get(request_id)
+            if request_state is None:
+                self.logger.warning("Request %s disappeared before PCM chunk %s was sent", request_id, seq_number)
+                return
+            if request_state["chunk_sent_to_server"] >= seq_number:
+                break
             if dag.status == DAGStatus.RUNNING:
                 await asyncio.sleep(self.sleep_time)
             else:
@@ -242,7 +304,7 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
                 self.logger.warning(msg)
                 return
         # Resample audio if needed
-        frame_rate = self.input_buffer[request_id]["frame_rate"]
+        frame_rate = request_state["frame_rate"]
         if frame_rate != self.__class__.FRAME_RATE:
             loop = asyncio.get_event_loop()
             pcm_bytes = await loop.run_in_executor(
@@ -265,7 +327,11 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
         audio_only_request.extend(payload_bytes)
         # Send audio-only client request
         await ws_client.send(audio_only_request)
-        self.input_buffer[request_id]["chunk_sent_to_server"] += 1
+        request_state = self.input_buffer.get(request_id)
+        if request_state is None:
+            self.logger.warning("Request %s disappeared right after sending PCM chunk", request_id)
+            return
+        request_state["chunk_sent_to_server"] += 1
 
     async def _send_to_downstream_and_clean(self, request_id: str) -> None:
         """Send result to downstream and clean up.

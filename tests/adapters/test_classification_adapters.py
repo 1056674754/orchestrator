@@ -283,7 +283,7 @@ async def test_sensenova_omni_classification_client_stream():
         type="SenseNovaOmniClassificationClient",
         name="sensenovaomni_classification_client",
         motion_keywords=motion_keywords,
-        wss_url="wss://api-gai.sensetime.com/agent-5o/duplex/ws2",
+        wss_url="wss://api.sensenova.cn/agent-5o/duplex/ws2",
         proxy_url=os.environ.get("PROXY_URL", None),
         logger_cfg=logger_cfg,
     )

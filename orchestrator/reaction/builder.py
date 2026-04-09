@@ -2,6 +2,7 @@ from .deepseek_reaction_client import DeepSeekReactionClient
 from .dummy_reaction_client import DummyReactionClient
 from .gemini_reaction_client import GeminiReactionClient
 from .openai_reaction_client import OpenAIReactionClient
+from .qwen_reaction_client import QwenReactionClient
 from .reaction_adapter import ReactionAdapter
 from .sensechat_reaction_client import SenseChatReactionClient
 from .sensenova_omni_reaction_client import SenseNovaOmniReactionClient
@@ -11,6 +12,7 @@ from .xai_reaction_client import XAIReactionClient
 _REACTION_ADAPTERS = dict(
     GeminiReactionClient=GeminiReactionClient,
     OpenAIReactionClient=OpenAIReactionClient,
+    QwenReactionClient=QwenReactionClient,
     SenseNovaOmniReactionClient=SenseNovaOmniReactionClient,
     SenseNovaReactionClient=SenseNovaReactionClient,
     SenseChatReactionClient=SenseChatReactionClient,

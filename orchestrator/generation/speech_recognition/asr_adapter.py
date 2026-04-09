@@ -207,6 +207,9 @@ class AutomaticSpeechRecognitionAdapter(Streamable):
             task (asyncio.Task): The completed task.
             request_id (str): The request ID associated with the task.
         """
+        if task.cancelled():
+            self.logger.warning("ASR client task was cancelled for request %s", request_id)
+            return
         exception = task.exception()
         if exception is not None:
             if isinstance(exception, MissingAPIKeyException):
@@ -219,7 +222,14 @@ class AutomaticSpeechRecognitionAdapter(Streamable):
                 self.logger.error(msg)
                 # Create an async task to handle the failure callback for other exceptions too
                 asyncio.create_task(self._send_failure_callback(f"Unexpected error: {exception}", request_id))
-            dag = self.input_buffer[request_id]["dag"]
+            request_state = self.input_buffer.get(request_id)
+            if request_state is None:
+                self.logger.warning(
+                    "ASR client task failed after request %s was already cleaned up",
+                    request_id,
+                )
+                return
+            dag = request_state["dag"]
             if dag is not None:
                 dag.set_status(DAGStatus.FAILED)
 
@@ -251,9 +261,11 @@ class AutomaticSpeechRecognitionAdapter(Streamable):
         """
         request_id = chunk.request_id
         if request_id not in self.input_buffer:
-            msg = f"Request {request_id} not found in input buffer, but received a body message."
-            self.logger.error(msg)
-            raise ChunkWithoutStartError(msg)
+            self.logger.warning(
+                "Dropping late ASR body chunk for request %s because the request is no longer active",
+                request_id,
+            )
+            return
         if self.input_buffer[request_id]["audio_type"] == "wav":
             raise NotImplementedError("WAV format is not supported for streaming ASR.")
         pcm_io = chunk.audio_io
@@ -276,9 +288,11 @@ class AutomaticSpeechRecognitionAdapter(Streamable):
         """
         request_id = chunk.request_id
         if request_id not in self.input_buffer:
-            msg = f"Request {request_id} not found in input buffer, but received an end message."
-            self.logger.error(msg)
-            raise ChunkWithoutStartError(msg)
+            self.logger.warning(
+                "Dropping late ASR end chunk for request %s because the request is no longer active",
+                request_id,
+            )
+            return
         self.input_buffer[request_id]["last_update_time"] = cur_time
         dag = self.input_buffer[request_id]["dag"]
         if dag.status == DAGStatus.RUNNING:

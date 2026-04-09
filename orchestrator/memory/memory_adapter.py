@@ -21,7 +21,7 @@ INITIAL_EMOTION_STATE = {
 
 INITIAL_RELATIONSHIP_STATE = {
     "stage": "Stranger",
-    "value": 0,
+    "value": 3,
 }
 
 
