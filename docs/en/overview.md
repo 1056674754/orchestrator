@@ -209,6 +209,7 @@ The system uses a Directed Acyclic Graph (DAG) architecture to manage complex AI
 | Google | `GeminiConversationClient` | `gemini-2.5-flash-lite` |
 | DeepSeek | `DeepSeekConversationClient` | `deepseek-chat` |
 | xAI | `XAIConversationClient` | `grok-3` |
+| Volcano Engine | `VolcengineRealtimeVoiceConversationClient` | `AG-voice-chat-agent` |
 | SenseNova | `SenseChatConversationClient` | `SenseChat-5-1202` (Large Language Model) |
 | SenseNova | `SenseNovaConversationClient` | `SenseNova-V6-5-Pro` (Multimodal Model) |
 | SenseNova | `SenseNovaOmniConversationClient` | `SenseNova-V6-5-Omni` (Real-time Interactive Multimodal Model) |

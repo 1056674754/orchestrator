@@ -74,6 +74,7 @@ class QwenRealtimeASRClient(OpenAIRealtimeASRClient):
             "OpenAI-Beta": "realtime=v1",
         }
         try:
+            connect_start_time = time.time()
             ws = await websockets.connect(
                 wss_url,
                 proxy=self.proxy_url,
@@ -98,6 +99,15 @@ class QwenRealtimeASRClient(OpenAIRealtimeASRClient):
             await ws.send(data)
             self.input_buffer[request_id]["ws_client"] = ws
             self.input_buffer[request_id]["commit_time"] = None
+            dag_start_time = self.input_buffer[request_id].get("dag_start_time", None)
+            since_dag_start = time.time() - dag_start_time if dag_start_time is not None else None
+            self.logger.info(
+                "Qwen realtime ASR connection ready for request %s: model=%s, connect_elapsed=%.3fs%s",
+                request_id,
+                model_name,
+                time.time() - connect_start_time,
+                f", since_dag_start={since_dag_start:.3f}s" if since_dag_start is not None else "",
+            )
         except Exception as e:
             self.input_buffer[request_id]["connection_failed"] = True
             self.logger.error(f"Failed to create connection to Qwen realtime ASR server: {e}")
@@ -145,6 +155,15 @@ class QwenRealtimeASRClient(OpenAIRealtimeASRClient):
             )
         )
         self.input_buffer[request_id]["commit_time"] = time.time()
+        dag_start_time = self.input_buffer[request_id].get("dag_start_time", None)
+        since_dag_start = (
+            self.input_buffer[request_id]["commit_time"] - dag_start_time if dag_start_time is not None else None
+        )
+        self.logger.info(
+            "Realtime ASR commit sent for request %s%s",
+            request_id,
+            f", since_dag_start={since_dag_start:.3f}s" if since_dag_start is not None else "",
+        )
 
         dag = self.input_buffer[request_id]["dag"]
         node_name = self.input_buffer[request_id]["node_name"]
@@ -163,6 +182,7 @@ class QwenRealtimeASRClient(OpenAIRealtimeASRClient):
 
         asr_text = ""
         commit_time = self.input_buffer[request_id]["commit_time"]
+        first_partial_logged = False
         while True:
             current_time = time.time()
             if current_time - commit_time > self.commit_timeout:
@@ -180,6 +200,16 @@ class QwenRealtimeASRClient(OpenAIRealtimeASRClient):
                     text = msg.get("text", "") or ""
                     if text:
                         asr_text += text
+                        if not first_partial_logged:
+                            first_partial_logged = True
+                            since_dag_partial = time.time() - dag_start_time if dag_start_time is not None else None
+                            self.logger.info(
+                                "Realtime ASR first partial ready for request %s: text_chars=%d, commit_to_partial=%.3fs%s",
+                                request_id,
+                                len(text),
+                                time.time() - commit_time,
+                                f", since_dag_start={since_dag_partial:.3f}s" if since_dag_partial is not None else "",
+                            )
                         for node in downstream_nodes:
                             await node.payload.feed_stream(
                                 TextChunkBody(
@@ -200,6 +230,14 @@ class QwenRealtimeASRClient(OpenAIRealtimeASRClient):
                                         text_segment=delta,
                                     )
                                 )
+                    since_dag_final = time.time() - dag_start_time if dag_start_time is not None else None
+                    self.logger.info(
+                        "Realtime ASR final text ready for request %s: text_chars=%d, commit_to_final=%.3fs%s",
+                        request_id,
+                        len(asr_text),
+                        time.time() - commit_time,
+                        f", since_dag_start={since_dag_final:.3f}s" if since_dag_final is not None else "",
+                    )
                     break
                 elif event_type == "session.finished":
                     break

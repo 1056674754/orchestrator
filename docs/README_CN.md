@@ -251,6 +251,7 @@ python main.py --config_path configs/local.py
 | Google | `GeminiConversationClient` | `gemini-2.5-flash-lite` |
 | DeepSeek | `DeepSeekConversationClient` | `deepseek-chat` |
 | xAI | `XAIConversationClient` | `grok-3` |
+| 火山引擎 | `VolcengineRealtimeVoiceConversationClient` | `AG-voice-chat-agent` |
 | SenseNova | `SenseChatConversationClient` | `SenseChat-5-1202` (大语言模型) |
 | SenseNova | `SenseNovaConversationClient` | `SenseNova-V6-5-Pro` (融合模态模型) |
 | SenseNova | `SenseNovaOmniConversationClient` | `SenseNova-V6-5-Omni` (实时交互融合模态模型) |

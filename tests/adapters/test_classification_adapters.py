@@ -7,10 +7,12 @@ import uuid
 import pytest
 
 from orchestrator.classification.builder import build_classification_adapter
+from orchestrator.data_structures.classification import ClassificationChunkBody, ClassificationChunkEnd, ClassificationChunkStart
 from orchestrator.data_structures.process_flow import DAGNode, DAGStatus, DirectedAcyclicGraph
 from orchestrator.data_structures.text_chunk import TextChunkBody, TextChunkEnd, TextChunkStart
 from orchestrator.profile.classification_stream_profile import ClassificationStreamProfile
 from orchestrator.utils.log import logging
+from orchestrator.utils.streamable import Streamable
 
 motion_keywords = []
 with open("configs/motion_kws.json", "r", encoding="utf-8") as f:
@@ -20,6 +22,78 @@ with open("configs/motion_kws.json", "r", encoding="utf-8") as f:
             motion_keywords.extend(motion["motion_keywords_ch"].split(","))
 motion_keywords = list(set(motion_keywords))
 print(f"Loaded {len(motion_keywords)} motion keywords")
+
+
+class ClassificationResultCollector(Streamable):
+    """Minimal collector for classification smoke tests."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.results = {}
+
+    async def _handle_start(self, chunk: ClassificationChunkStart, cur_time: float) -> None:
+        self.input_buffer[chunk.request_id] = {"last_update_time": cur_time}
+        self.results[chunk.request_id] = {"result": None, "message": None, "completed": False}
+
+    async def _handle_body(self, chunk: ClassificationChunkBody, cur_time: float) -> None:
+        self.input_buffer[chunk.request_id]["last_update_time"] = cur_time
+        self.results[chunk.request_id]["result"] = chunk.classification_result
+        self.results[chunk.request_id]["message"] = chunk.message
+
+    async def _handle_end(self, chunk: ClassificationChunkEnd, cur_time: float) -> None:
+        self.input_buffer[chunk.request_id]["last_update_time"] = cur_time
+        self.results[chunk.request_id]["completed"] = True
+
+
+async def _run_classification_stream_test(
+    *,
+    classification_client_cfg: dict,
+    user_settings: dict,
+    text: str,
+    language: str = "zh",
+    timeout_seconds: float = 10.0,
+):
+    """Run one classification stream test and return result plus elapsed time."""
+    logger_cfg = classification_client_cfg["logger_cfg"]
+    adapter = build_classification_adapter(classification_client_cfg)
+    asyncio.create_task(adapter.run())
+
+    collector = ClassificationResultCollector(logger_cfg=logger_cfg)
+    asyncio.create_task(collector.run())
+
+    graph = DirectedAcyclicGraph(
+        name="test_classification_stream",
+        conf=dict(language=language, user_settings=user_settings),
+        logger_cfg=logger_cfg,
+    )
+    classification_node = DAGNode(name="classification_node", payload=adapter)
+    collector_node = DAGNode(name="collector_node", payload=collector)
+    graph.add_node(classification_node)
+    graph.add_node(collector_node)
+    graph.add_edge(classification_node.name, collector_node.name)
+    graph.set_status(DAGStatus.RUNNING)
+
+    request_id = str(uuid.uuid4())
+    start_chunk = TextChunkStart(request_id=request_id, dag=graph, node_name=classification_node.name)
+    await adapter.feed_stream(start_chunk)
+    for char in text:
+        await adapter.feed_stream(TextChunkBody(request_id=request_id, text_segment=char))
+    await adapter.feed_stream(TextChunkEnd(request_id=request_id))
+
+    start_time = time.time()
+    while True:
+        result = collector.results.get(request_id)
+        if result and result.get("completed"):
+            elapsed = time.time() - start_time
+            await adapter.interrupt()
+            await collector.interrupt()
+            await asyncio.sleep(adapter.sleep_time * 5)
+            return result["result"], elapsed
+        if time.time() - start_time > timeout_seconds:
+            await adapter.interrupt()
+            await collector.interrupt()
+            raise TimeoutError("Classification stream timeout")
+        await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio
@@ -254,6 +328,56 @@ async def test_gemini_classification_client_stream():
     await adapter.interrupt()
     await profile.interrupt()
     await asyncio.sleep(adapter.sleep_time * 5)
+
+
+@pytest.mark.asyncio
+async def test_qwen_classification_client_stream():
+    """Smoke test Qwen classification with correctness and latency budget.
+
+    This is meant to replace manual phone-tapping for the classification hot path.
+    It uses the real adapter, real streaming flow, and a small correctness set.
+    """
+    qwen_api_key = os.environ.get("QWEN_API_KEY")
+    if not qwen_api_key:
+        pytest.skip("qwen_api_key is not set, skipping test_qwen_classification_client_stream")
+
+    max_elapsed_seconds = float(os.environ.get("QWEN_CLASSIFICATION_MAX_SECONDS", "8.0"))
+    logger_cfg = dict(
+        logger_name="test_qwen_classification_client_stream",
+        file_level=logging.DEBUG,
+        logger_path="logs/pytest.log",
+    )
+    classification_client_cfg = dict(
+        type="QwenClassificationClient",
+        name="qwen_classification_client",
+        motion_keywords=motion_keywords,
+        qwen_model_name="qwen-turbo-latest",
+        proxy_url=os.environ.get("PROXY_URL", None),
+        logger_cfg=logger_cfg,
+    )
+
+    cases = [
+        ("你好呀", "accept"),
+        ("给我唱首歌", "reject"),
+        ("拜拜，先不聊了", "leave"),
+    ]
+    elapsed_values = []
+    for text, expected in cases:
+        result, elapsed = await _run_classification_stream_test(
+            classification_client_cfg=classification_client_cfg,
+            user_settings=dict(qwen_api_key=qwen_api_key),
+            text=text,
+            language="zh",
+            timeout_seconds=max(max_elapsed_seconds * 2, 10.0),
+        )
+        elapsed_values.append(elapsed)
+        assert result is not None
+        assert result.value == expected
+
+    assert max(elapsed_values) <= max_elapsed_seconds, (
+        f"Qwen classification too slow: max_elapsed={max(elapsed_values):.3f}s, "
+        f"budget={max_elapsed_seconds:.3f}s, cases={cases}"
+    )
 
 
 @pytest.mark.asyncio

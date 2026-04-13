@@ -130,6 +130,10 @@ class OpenAIConversationClient(ConversationAdapter):
         )
         self.executor_external = True if thread_pool_executor is not None else False
 
+    def _get_completion_extra_body(self) -> Dict[str, Any] | None:
+        """Return provider-specific extra request fields."""
+        return None
+
     def __del__(self) -> None:
         """Destructor, cleanup thread pool executor."""
         if not self.executor_external:
@@ -211,6 +215,7 @@ class OpenAIConversationClient(ConversationAdapter):
             chat_rsp = ""
             first_body_trunk = True
             model_name_override = task_space["conversation_model_override"]
+            effective_model_name = model_name_override if model_name_override else self.openai_model_name
             system_chat = self.agent_prompts["system_chat"].format(style_list=style_list)
             conversation_prompt = task_space["user_prompt"] + "\n" + system_chat
             llm_client = task_space.get("llm_client", None)
@@ -219,8 +224,19 @@ class OpenAIConversationClient(ConversationAdapter):
                 llm_client = task_space.get("llm_client", None)
 
             user_id = task_space["user_id"]
-            chat_rsp_stream = await llm_client.chat.completions.create(
-                model=model_name_override if model_name_override else self.openai_model_name,
+            self.logger.info(
+                "Conversation request started for request %s: adapter=%s, model=%s, prompt_chars=%d, context_chars=%d, history_turns=%d, message_chars=%d%s",
+                request_id,
+                self.name,
+                effective_model_name,
+                len(conversation_prompt),
+                len(conversation_context),
+                len(conversation_history),
+                len(message),
+                f", since_dag_start={time.time() - dag_start_time:.3f}s" if dag_start_time is not None else "",
+            )
+            request_kwargs: Dict[str, Any] = dict(
+                model=effective_model_name,
                 messages=[
                     {
                         "role": "system",
@@ -236,6 +252,10 @@ class OpenAIConversationClient(ConversationAdapter):
                 stream=True,
                 stream_options={"include_usage": True},
             )
+            extra_body = self._get_completion_extra_body()
+            if extra_body:
+                request_kwargs["extra_body"] = extra_body
+            chat_rsp_stream = await llm_client.chat.completions.create(**request_kwargs)
             input_token_number = 0
             output_token_number = 0
             loop = asyncio.get_event_loop()
@@ -262,13 +282,15 @@ class OpenAIConversationClient(ConversationAdapter):
                             coroutines.append(payload.feed_stream(body_trunk))
                             if first_body_trunk:
                                 first_body_trunk = False
-                                if dag_start_time is not None:
-                                    time_diff = time.time() - dag_start_time
-                                    self.logger.debug(
-                                        f"request {request_id} LLM delay from DAG start: {time_diff:.2f} seconds"
-                                    )
+                                time_diff = time.time() - dag_start_time if dag_start_time is not None else None
                                 latency = time.time() - start_time
-                                self.logger.debug(f"request {request_id} first chunk latency: {latency:.2f} seconds")
+                                self.logger.info(
+                                    "Conversation first chunk ready for request %s: model=%s, first_chunk_latency=%.3fs%s",
+                                    request_id,
+                                    effective_model_name,
+                                    latency,
+                                    f", since_dag_start={time_diff:.3f}s" if time_diff is not None else "",
+                                )
                                 if self.latency_histogram:
                                     self.latency_histogram.labels(adapter=self.name, user_id=user_id).observe(latency)
                         asyncio.gather(*coroutines)
@@ -336,7 +358,7 @@ class OpenAIConversationClient(ConversationAdapter):
                 await asyncio.sleep(self.sleep_time)
                 llm_client = task_space.get("llm_client", None)
 
-            reject_rsp_stream = await llm_client.chat.completions.create(
+            request_kwargs: Dict[str, Any] = dict(
                 model=model_name_override if model_name_override else self.openai_model_name,
                 messages=[
                     {"role": "system", "content": reject_prompt},
@@ -347,6 +369,10 @@ class OpenAIConversationClient(ConversationAdapter):
                 stream=True,
                 stream_options={"include_usage": True},
             )
+            extra_body = self._get_completion_extra_body()
+            if extra_body:
+                request_kwargs["extra_body"] = extra_body
+            reject_rsp_stream = await llm_client.chat.completions.create(**request_kwargs)
             input_token_number = 0
             output_token_number = 0
             user_id = task_space["user_id"]

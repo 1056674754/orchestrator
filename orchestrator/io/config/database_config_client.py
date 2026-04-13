@@ -27,6 +27,7 @@ class DatabaseConfigClient(Super, ABC):
     """
 
     CHARACTER_KEYS = (
+        "character_name",
         "avatar",
         "tts_adapter",
         "voice",
@@ -74,6 +75,10 @@ class DatabaseConfigClient(Super, ABC):
         "huoshan_app_id",
         "huoshan_token",
         "huoshan_secret_key",
+        "volcengine_api_key",
+        "volcengine_app_id",
+        "volcengine_token",
+        "volcengine_secret_key",
         "snese_tts_api_key",
         "nova_tts_api_key",
         "elevenlabs_api_key",

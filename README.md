@@ -257,6 +257,7 @@ python main.py --config_path configs/local.py
 | xAI | `XAIConversationClient` | `grok-3` |
 | Alibaba Bailian | `QwenConversationClient` | `qwen-turbo-latest` |
 | Alibaba Bailian | `QwenOmniRealtimeConversationClient` | `qwen3.5-omni-plus-realtime` |
+| Volcano Engine | `VolcengineRealtimeVoiceConversationClient` | `AG-voice-chat-agent` |
 | SenseNova | `SenseChatConversationClient` | `SenseChat-5-1202` (Large Language Model) |
 | SenseNova | `SenseNovaConversationClient` | `SenseNova-V6-5-Pro` (Multimodal Model) |
 | SenseNova | `SenseNovaOmniConversationClient` | `SenseNova-V6-5-Omni` (Real-time Interactive Multimodal Model) |

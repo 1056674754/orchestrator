@@ -85,6 +85,14 @@ class OpenAIClassificationClient(ClassificationAdapter):
             timeout=self.timeout,
         )
 
+    def _get_completion_extra_body(self) -> Optional[Dict[str, Any]]:
+        """Return provider-specific extra request fields.
+
+        OpenAI-compatible providers can override this to pass non-standard
+        fields such as DashScope's ``enable_thinking``.
+        """
+        return None
+
     async def classify(
         self,
         request_id: str,
@@ -119,7 +127,7 @@ class OpenAIClassificationClient(ClassificationAdapter):
         model_name_override = self.input_buffer[request_id]["classification_model_override"]
         openai_model_name = model_name_override if model_name_override else self.openai_model_name
         try:
-            response = await llm_client.chat.completions.create(
+            request_kwargs: Dict[str, Any] = dict(
                 model=openai_model_name,
                 messages=[
                     {"role": "system", "content": prompt},
@@ -129,6 +137,10 @@ class OpenAIClassificationClient(ClassificationAdapter):
                 max_tokens=1000,
                 response_format=response_format,  # type: ignore
             )
+            extra_body = self._get_completion_extra_body()
+            if extra_body:
+                request_kwargs["extra_body"] = extra_body
+            response = await llm_client.chat.completions.create(**request_kwargs)
             response = json.loads(response.choices[0].message.content)["type"]  # type: ignore
             self.logger.debug(f"Classification response: {response}")
             return ClassificationType(response)

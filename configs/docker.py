@@ -137,6 +137,16 @@ proxy = dict(
             qwen_model_name="qwen3.5-omni-plus-realtime",
             proxy_url=os.environ.get("PROXY_URL", None),
         ),
+        # Volcengine realtime dialogue:
+        # https://www.volcengine.com/docs/6561/1594356?lang=zh
+        volcengine_realtime_voice_agent=dict(
+            type="VolcengineRealtimeVoiceConversationClient",
+            name="volcengine_realtime_voice_agent_client",
+            agent_prompts_file="configs/agent_prompts.yaml",
+            wss_url="wss://openspeech.bytedance.com/api/v3/realtime/dialogue",
+            volcengine_bot_name="",
+            proxy_url=os.environ.get("PROXY_URL", None),
+        ),
         xai_agent=dict(
             type="XAIConversationClient",
             name="xai_agent_client",
@@ -200,6 +210,8 @@ proxy = dict(
             motion_keywords=os.environ.get("BACKEND_URL", None),
             proxy_url=os.environ.get("PROXY_URL", None),
             qwen_model_name="qwen-turbo-latest",
+            timeout=6.0,
+            max_retries=0,
         ),
         sensenovaomni_classification=dict(
             type="SenseNovaOmniClassificationClient",
@@ -315,13 +327,33 @@ proxy = dict(
             proxy_url=os.environ.get("PROXY_URL", None),
             queue_size=5000,
         ),
+        doubao_realtime_asr=dict(
+            type="HuoshanASRClient",
+            name="doubao_realtime_asr_client",
+            wss_url="wss://openspeech.bytedance.com/api/v2/asr",
+            cluster_id="volcengine_streaming_common",
+            default_language="zh-CN",
+            request_timeout=5,
+            commit_timeout=8,
+            queue_size=5000,
+        ),
         huoshan=dict(
+            type="HuoshanASRClient",
+            name="huoshan_asr_client",
+            wss_url="wss://openspeech.bytedance.com/api/v2/asr",
+            cluster_id="volcengine_streaming_common",
+            default_language="zh-CN",
+            request_timeout=5,
+            commit_timeout=8,
+            queue_size=5000,
+        ),
+        volcengine_bigasr=dict(
             type="HuoshanBigmodelASRClient",
-            name="huoshan_big_asr_client",
+            name="volcengine_big_asr_client",
             wss_url="wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async",
             default_language="zh-CN",
             request_timeout=5,
-            commit_timeout=4,
+            commit_timeout=8,
             enable_nonstream=True,
             enable_accelerate_text=True,
             accelerate_score=8,
@@ -336,11 +368,23 @@ proxy = dict(
         timeout=20.0,
     ),
     tts_adapters=dict(
+        doubao=dict(
+            type="HuoshanTTSClient",
+            name="doubao_tts_client",
+            tts_ws_url="wss://openspeech.bytedance.com/api/v1/tts/ws_binary",
+            cluster="volcano_tts",
+        ),
         huoshan=dict(
             type="HuoshanTTSClient",
             name="huoshan_tts_client",
             tts_ws_url="wss://openspeech.bytedance.com/api/v1/tts/ws_binary",
             cluster="volcano_tts",
+        ),
+        doubao_icl=dict(
+            type="HuoshanTTSClient",
+            name="doubao_icl_client",
+            tts_ws_url="wss://openspeech.bytedance.com/api/v1/tts/ws_binary",
+            cluster="volcano_icl",
         ),
         huoshan_icl=dict(
             type="HuoshanTTSClient",

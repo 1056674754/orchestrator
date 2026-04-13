@@ -9,6 +9,7 @@ from .qwen_omni_realtime_conversation_client import QwenOmniRealtimeConversation
 from .sensechat_conversation_client import SenseChatConversationClient
 from .sensenova_conversation_client import SenseNovaConversationClient
 from .sensenova_omni_conversation_client import SenseNovaOmniConversationClient
+from .volcengine_realtime_voice_conversation_client import VolcengineRealtimeVoiceConversationClient
 from .xai_conversation_client import XAIConversationClient
 
 _CONVERSATION_ADAPTERS = dict(
@@ -23,6 +24,7 @@ _CONVERSATION_ADAPTERS = dict(
     SenseNovaConversationClient=SenseNovaConversationClient,
     SenseNovaOmniConversationClient=SenseNovaOmniConversationClient,
     QwenOmniRealtimeConversationClient=QwenOmniRealtimeConversationClient,
+    VolcengineRealtimeVoiceConversationClient=VolcengineRealtimeVoiceConversationClient,
 )
 
 

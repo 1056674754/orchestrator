@@ -255,6 +255,64 @@ with open(agent_prompts_file_path, "r", encoding="utf-8") as file:
     agent_prompts = yaml.safe_load(file)
 
 
+def test_volcengine_realtime_voice_client_build() -> None:
+    """Smoke-test that the Volcengine realtime voice adapter can be built."""
+
+    adapter = build_conversation_adapter(
+        dict(
+            type="VolcengineRealtimeVoiceConversationClient",
+            name="volcengine_realtime_voice_agent_client",
+            agent_prompts_file=agent_prompts_file_path,
+            wss_url="wss://openspeech.bytedance.com/api/v3/realtime/dialogue",
+            volcengine_bot_name="",
+            request_timeout=5,
+            logger_cfg=dict(logger_name="test_volcengine_realtime_voice_client_build"),
+        )
+    )
+
+    assert adapter.name == "volcengine_realtime_voice_agent_client"
+    assert adapter.volcengine_bot_name == ""
+
+
+def test_volcengine_realtime_voice_resolve_bot_name_prefers_character_name() -> None:
+    """Realtime voice should not fall back to the vendor default persona."""
+
+    request_state = {
+        "character_name": "Keqing",
+        "conversation_model_override": "",
+        "user_prompt": "",
+        "voice_name": "",
+    }
+
+    assert VolcengineRealtimeVoiceConversationClient._resolve_bot_name(request_state) == "Keqing"
+
+
+def test_volcengine_realtime_voice_resolve_bot_name_ignores_model_like_override() -> None:
+    """Model identifiers must not be reused as bot names."""
+
+    request_state = {
+        "character_name": "Keqing",
+        "conversation_model_override": "AG-voice-chat-agent",
+        "user_prompt": "",
+        "voice_name": "",
+    }
+
+    assert VolcengineRealtimeVoiceConversationClient._resolve_bot_name(request_state) == "Keqing"
+
+
+def test_volcengine_realtime_voice_resolve_bot_name_from_prompt() -> None:
+    """Prompt-labeled names should still be used when explicit character names are absent."""
+
+    request_state = {
+        "character_name": "",
+        "conversation_model_override": "",
+        "user_prompt": "角色名: 刻晴\n你是璃月七星之一。",
+        "voice_name": "",
+    }
+
+    assert VolcengineRealtimeVoiceConversationClient._resolve_bot_name(request_state) == "刻晴"
+
+
 @pytest.mark.asyncio
 async def test_openai_audio_client_stream_pcm_16khz(
     mongodb_memory_client: MongoDBMemoryClient,

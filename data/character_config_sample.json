@@ -2,7 +2,7 @@
     "user_id": "a9ca656c-9091-70b9-007e-ac639f24845b",
     "character_id": "6d4e9c50-452c-4540-825b-16b185f14f46",
     "avatar": "Ani-default",
-    "tts_adapter": "huoshan",
+    "tts_adapter": "doubao",
     "voice": "zh_female_roumeinvyou_emo_v2_mars_bigtts",
     "voice_speed": 1.0,
     "asr_adapter": "openai_realtime",

@@ -178,6 +178,7 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
         secret_key: str,
         request_bytes: bytes,
         full_client_request: bytes,
+        request_path: str = "/api/v2/asr",
     ) -> dict[str, str]:
         """Build the official HMAC256 authorization header for WebSocket ASR.
 
@@ -186,7 +187,7 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
         server accepts the complete first frame payload for `/api/v2/asr`.
         """
         _ = request_bytes
-        request_line = "GET /api/v2/asr HTTP/1.1\n".encode("utf-8")
+        request_line = f"GET {request_path} HTTP/1.1\n".encode("utf-8")
         user_agent = self.__class__.SIGNATURE_USER_AGENT.encode("utf-8")
         signing_bytes = request_line + user_agent + b"\n" + full_client_request
         digest = hmac.new(secret_key.encode("utf-8"), signing_bytes, hashlib.sha256).digest()
@@ -238,9 +239,11 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
                 secret_key=secret_key,
                 request_bytes=request_bytes,
                 full_client_request=bytes(full_client_request),
+                request_path="/api/v2/asr",
             )
             auth_mode = "signature"
         try:
+            connect_start_time = time.time()
             self.logger.info(
                 "Connecting to Huoshan ASR via %s auth for request %s with cluster %s",
                 auth_mode,
@@ -257,6 +260,15 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
                 raise HuoshanASRClientError(msg)
             self.input_buffer[request_id]["ws_client"] = ws
             self.input_buffer[request_id]["commit_time"] = None
+            dag_start_time = self.input_buffer[request_id].get("dag_start_time", None)
+            since_dag_start = time.time() - dag_start_time if dag_start_time is not None else None
+            self.logger.info(
+                "Huoshan ASR connection ready for request %s: auth=%s, connect_elapsed=%.3fs%s",
+                request_id,
+                auth_mode,
+                time.time() - connect_start_time,
+                f", since_dag_start={since_dag_start:.3f}s" if since_dag_start is not None else "",
+            )
         except Exception as e:
             self.input_buffer[request_id]["connection_failed"] = True
             traceback_str = traceback.format_exc()
@@ -372,8 +384,16 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
         await ws_client.send(audio_only_request)
         commit_time = time.time()
         self.input_buffer[request_id]["commit_time"] = commit_time
-        self.logger.debug(f"sent asr commit message to server for request {request_id}")
+        dag_start_time = self.input_buffer[request_id].get("dag_start_time", None)
+        since_dag_start = commit_time - dag_start_time if dag_start_time is not None else None
+        self.logger.info(
+            "ASR commit sent for request %s%s",
+            request_id,
+            f", since_dag_start={since_dag_start:.3f}s" if since_dag_start is not None else "",
+        )
         asr_text = ""
+        last_partial_text = ""
+        final_result_time = None
         dag = self.input_buffer[request_id]["dag"]
         node_name = self.input_buffer[request_id]["node_name"]
         dag_node = dag.get_node(node_name)
@@ -403,8 +423,27 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
                     msg = f"Huoshan ASR server returned error {result['payload_msg']} for request {request_id}"
                     self.logger.error(msg)
                     break
+                if "payload_msg" in result:
+                    payload_msg = result["payload_msg"]
+                    current_text = ""
+                    try:
+                        current_text = payload_msg["result"][0]["text"] or ""
+                    except Exception:
+                        current_text = ""
+                    if current_text:
+                        last_partial_text = current_text
                 if "payload_msg" in result and result["payload_msg"]["sequence"] < 0:
-                    asr_text = result["payload_msg"]["result"][0]["text"]
+                    asr_text = last_partial_text
+                    final_result_time = time.time()
+                    commit_to_final = final_result_time - commit_time
+                    since_dag_final = final_result_time - dag_start_time if dag_start_time is not None else None
+                    self.logger.info(
+                        "ASR final text ready for request %s: text_chars=%d, commit_to_final=%.3fs%s",
+                        request_id,
+                        len(asr_text),
+                        commit_to_final,
+                        f", since_dag_start={since_dag_final:.3f}s" if since_dag_final is not None else "",
+                    )
                     break
             except asyncio.TimeoutError:
                 self.logger.error(
@@ -412,9 +451,23 @@ class HuoshanASRClient(AutomaticSpeechRecognitionAdapter):
                     + f"spent {current_time - commit_time:.3f} seconds, "
                     + f"timeout {self.commit_timeout:.3f} seconds"
                 )
+                if last_partial_text:
+                    asr_text = last_partial_text
+                    self.logger.warning(
+                        "ASR timeout for request %s, fallback to last partial text with %d chars",
+                        request_id,
+                        len(asr_text),
+                    )
                 break
             except Exception as e:
                 self.logger.error(f"ASR error for request {request_id}: {e}")
+                if last_partial_text:
+                    asr_text = last_partial_text
+                    self.logger.warning(
+                        "ASR error for request %s, fallback to last partial text with %d chars",
+                        request_id,
+                        len(asr_text),
+                    )
                 break
         if not asr_text:
             self.logger.warning(f"ASR text is empty for request {request_id}, use default text.")

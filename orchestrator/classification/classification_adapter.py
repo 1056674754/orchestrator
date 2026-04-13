@@ -261,9 +261,17 @@ class ClassificationAdapter(Streamable):
         try:
             process_start_time = time.time()
             text = self.input_buffer[request_id]["text_segments"]
+            dag_start_time = self.input_buffer[request_id]["dag"].conf.get("start_time", None)
+            from_dag_start = process_start_time - dag_start_time if dag_start_time is not None else None
             if not text.strip():
                 # if text_segments is empty, then the user is not speaking, return ACCEPT
                 result = ClassificationType.ACCEPT
+                self.logger.info(
+                    "Classification skipped for request %s: empty text, text_chars=%d%s",
+                    request_id,
+                    len(text),
+                    f", since_dag_start={from_dag_start:.3f}s" if from_dag_start is not None else "",
+                )
             else:
                 try:
                     language = self.input_buffer[request_id]["language"]
@@ -272,6 +280,17 @@ class ClassificationAdapter(Streamable):
                     else:
                         prompt = CLASSIFICATION_PROMPT_EN
                     prompt = prompt.format(motions=self.motion_kws)
+                    self.logger.info(
+                        "Classification request started for request %s: adapter=%s, language=%s, text_chars=%d, "
+                        "prompt_chars=%d, motion_keyword_count=%d%s",
+                        request_id,
+                        self.name,
+                        language,
+                        len(text),
+                        len(prompt) + len(TAG_PROMPT),
+                        len(self.motion_kws),
+                        f", since_dag_start={from_dag_start:.3f}s" if from_dag_start is not None else "",
+                    )
                     result = await self.classify(request_id, prompt, text, RESPONSE_FORMAT, TAG_PROMPT)
                 except Exception:
                     self.logger.error(
@@ -280,7 +299,14 @@ class ClassificationAdapter(Streamable):
                     result = ClassificationType.ACCEPT
             process_end_time = time.time()
             process_time = process_end_time - process_start_time
-            self.logger.debug(f"Request {request_id} processed in {process_time} seconds, result: {result}")
+            since_dag_end = process_end_time - dag_start_time if dag_start_time is not None else None
+            self.logger.info(
+                "Classification finished for request %s: result=%s, elapsed=%.3fs%s",
+                request_id,
+                result,
+                process_time,
+                f", since_dag_start={since_dag_end:.3f}s" if since_dag_end is not None else "",
+            )
             if self.latency_histogram:
                 self.latency_histogram.labels(adapter=self.name).observe(process_time)
             # sending to downstream nodes

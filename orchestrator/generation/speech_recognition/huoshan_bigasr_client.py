@@ -1,13 +1,9 @@
 import asyncio
-import base64
 import gzip
-import hashlib
-import hmac
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Union
-from urllib.parse import urlparse
 
 import websockets
 
@@ -29,7 +25,8 @@ class HuoshanBigmodelASRClient(HuoshanASRClient):
     results and optional second-pass refinement support.
     """
 
-    SIGNATURE_USER_AGENT = "DLP3D-HuoshanBigASR/1.0"
+    SIGNATURE_USER_AGENT = "DLP3D-VolcengineBigASR/1.0"
+    REQUEST_PATH = "/api/v3/sauc/bigmodel_async"
     ExecutorRegistry.register_class("HuoshanBigmodelASRClient")
 
     def __init__(
@@ -112,42 +109,19 @@ class HuoshanBigmodelASRClient(HuoshanASRClient):
             },
         }
 
-    def _build_signature_authorization(
-        self,
-        token: str,
-        secret_key: str,
-        request_bytes: bytes,
-        full_client_request: bytes,
-    ) -> dict[str, str]:
-        _ = request_bytes
-        request_path = urlparse(self.wss_url).path or "/api/v3/sauc/bigmodel_async"
-        request_line = f"GET {request_path} HTTP/1.1\n".encode("utf-8")
-        user_agent = self.__class__.SIGNATURE_USER_AGENT.encode("utf-8")
-        signing_bytes = request_line + user_agent + b"\n" + full_client_request
-        digest = hmac.new(secret_key.encode("utf-8"), signing_bytes, hashlib.sha256).digest()
-        mac = base64.urlsafe_b64encode(digest).decode("utf-8")
-        authorization = (
-            f'HMAC256; access_token="{token}"; mac="{mac}"; h="User-Agent"'
-        )
-        return {
-            "Authorization": authorization,
-            "Accept": "*/*",
-            "User-Agent": self.__class__.SIGNATURE_USER_AGENT,
-        }
-
     async def _create_connection(self, request_id: str, cur_time: float) -> None:
-        # Reuse parent connection flow but with the newer request body and path-specific signature.
         request_state = self.input_buffer.get(request_id)
         if request_state is None:
             self.logger.warning("Skip creating Huoshan big ASR connection for inactive request %s", request_id)
             return
-        app_id = request_state.get("api_keys", {}).get("huoshan_app_id", "")
-        token = request_state.get("api_keys", {}).get("huoshan_token", "")
-        secret_key = request_state.get("api_keys", {}).get("huoshan_secret_key", "")
+        api_keys = request_state.get("api_keys", {})
+        app_id = api_keys.get("volcengine_app_id", "")
+        token = api_keys.get("volcengine_token", "")
+        secret_key = api_keys.get("volcengine_secret_key", "")
         if not app_id or not token:
             from ...utils.exception import MissingAPIKeyException
 
-            msg = "Huoshan app ID or token is not found in the API keys."
+            msg = "Volcengine app ID or access token is not found in the API keys."
             self.logger.error(msg)
             raise MissingAPIKeyException(msg)
         language = request_state.get("language", self.default_language)
@@ -166,10 +140,16 @@ class HuoshanBigmodelASRClient(HuoshanASRClient):
                 secret_key=secret_key,
                 request_bytes=request_bytes,
                 full_client_request=bytes(full_client_request),
+                request_path=self.__class__.REQUEST_PATH,
             )
             auth_mode = "signature"
         try:
-            self.logger.info("Connecting to Huoshan big ASR via %s auth for request %s", auth_mode, request_id)
+            connect_start_time = time.time()
+            self.logger.info(
+                "Connecting to Volcengine big ASR via %s auth for request %s",
+                auth_mode,
+                request_id,
+            )
             ws = await websockets.connect(self.wss_url, additional_headers=auth_headers, max_size=100 * 1024 * 1024)
             await ws.send(full_client_request)
             res = await ws.recv()
@@ -185,6 +165,15 @@ class HuoshanBigmodelASRClient(HuoshanASRClient):
                 return
             request_state["ws_client"] = ws
             request_state["commit_time"] = None
+            dag_start_time = request_state.get("dag_start_time", None)
+            since_dag_start = time.time() - dag_start_time if dag_start_time is not None else None
+            self.logger.info(
+                "Volcengine big ASR connection ready for request %s: auth=%s, connect_elapsed=%.3fs%s",
+                request_id,
+                auth_mode,
+                time.time() - connect_start_time,
+                f", since_dag_start={since_dag_start:.3f}s" if since_dag_start is not None else "",
+            )
         except Exception as e:
             request_state = self.input_buffer.get(request_id)
             if request_state is not None:

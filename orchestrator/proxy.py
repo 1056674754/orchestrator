@@ -168,7 +168,9 @@ class Proxy(Super):
         self.sleep_time = sleep_time
         self.process_timeout = process_timeout
         self.executor = (
-            thread_pool_executor if thread_pool_executor is not None else ThreadPoolExecutor(max_workers=max_workers)
+            thread_pool_executor
+            if thread_pool_executor is not None
+            else ThreadPoolExecutor(max_workers=max_workers)
         )
         self.executor_external = True if thread_pool_executor is not None else False
         self.enable_prometheus_registry = enable_prometheus_registry
@@ -201,40 +203,62 @@ class Proxy(Super):
         for memory_key, memory_cfg in memory_adapters.items():
             self.memory_cfgs[memory_key] = memory_cfg.copy()
             self.memory_cfgs[memory_key]["logger_cfg"] = logger_cfg
-            self.memory_cfgs[memory_key]["input_token_number_histogram"] = self.memory_input_token_number_histogram
-            self.memory_cfgs[memory_key]["output_token_number_histogram"] = self.memory_output_token_number_histogram
+            self.memory_cfgs[memory_key]["input_token_number_histogram"] = (
+                self.memory_input_token_number_histogram
+            )
+            self.memory_cfgs[memory_key]["output_token_number_histogram"] = (
+                self.memory_output_token_number_histogram
+            )
             self.memory_cfgs[memory_key]["db_client"] = self.db_memory_client
             if ExecutorRegistry.validate_class(self.memory_cfgs[memory_key]["type"]):
                 self.memory_cfgs[memory_key]["thread_pool_executor"] = self.executor
-            self.memory_adapters[memory_key] = build_memory_adapter(self.memory_cfgs[memory_key])
+            self.memory_adapters[memory_key] = build_memory_adapter(
+                self.memory_cfgs[memory_key]
+            )
 
             # Create corresponding MemoryManager for each memory adapter
             MemoryManager(
                 db_client=self.db_memory_client,
                 memory_adapter=self.memory_adapters[memory_key],
-                conversation_char_threshold=memory_cfg.get("conversation_char_threshold", 10000),
-                conversation_char_target=memory_cfg.get("conversation_char_target", 8000),
-                short_term_length_threshold=memory_cfg.get("short_term_length_threshold", 20),
+                conversation_char_threshold=memory_cfg.get(
+                    "conversation_char_threshold", 10000
+                ),
+                conversation_char_target=memory_cfg.get(
+                    "conversation_char_target", 8000
+                ),
+                short_term_length_threshold=memory_cfg.get(
+                    "short_term_length_threshold", 20
+                ),
                 short_term_target_size=memory_cfg.get("short_term_target_size", 10),
-                medium_term_length_threshold=memory_cfg.get("medium_term_length_threshold", 10),
+                medium_term_length_threshold=memory_cfg.get(
+                    "medium_term_length_threshold", 10
+                ),
                 sleep_time=memory_cfg.get("sleep_time", 1.0),
                 logger_cfg=logger_cfg,
             )
 
-        self.conversation_adapters: Dict[str, Union[ConversationAdapter, AudioConversationAdapter]] = dict()
+        self.conversation_adapters: Dict[
+            str, Union[ConversationAdapter, AudioConversationAdapter]
+        ] = dict()
         self.conversation_cfgs = dict()
         for conversation_key, conversation_cfg in conversation_adapters.items():
             self.conversation_cfgs[conversation_key] = conversation_cfg.copy()
             self.conversation_cfgs[conversation_key]["logger_cfg"] = logger_cfg
-            self.conversation_cfgs[conversation_key]["latency_histogram"] = self.conversation_latency_histogram
-            self.conversation_cfgs[conversation_key][
-                "input_token_number_histogram"
-            ] = self.conversation_input_token_number_histogram
+            self.conversation_cfgs[conversation_key]["latency_histogram"] = (
+                self.conversation_latency_histogram
+            )
+            self.conversation_cfgs[conversation_key]["input_token_number_histogram"] = (
+                self.conversation_input_token_number_histogram
+            )
             self.conversation_cfgs[conversation_key][
                 "output_token_number_histogram"
             ] = self.conversation_output_token_number_histogram
-            if ExecutorRegistry.validate_class(self.conversation_cfgs[conversation_key]["type"]):
-                self.conversation_cfgs[conversation_key]["thread_pool_executor"] = self.executor
+            if ExecutorRegistry.validate_class(
+                self.conversation_cfgs[conversation_key]["type"]
+            ):
+                self.conversation_cfgs[conversation_key]["thread_pool_executor"] = (
+                    self.executor
+                )
             self.conversation_adapters[conversation_key] = build_conversation_adapter(
                 self.conversation_cfgs[conversation_key]
             )
@@ -261,11 +285,17 @@ class Proxy(Super):
         for classfication_key, classfication_cfg in classfication_adapters.items():
             self.classfication_cfgs[classfication_key] = classfication_cfg.copy()
             self.classfication_cfgs[classfication_key]["logger_cfg"] = logger_cfg
-            self.classfication_cfgs[classfication_key]["latency_histogram"] = self.classification_latency_histogram
-            if ExecutorRegistry.validate_class(self.classfication_cfgs[classfication_key]["type"]):
-                self.classfication_cfgs[classfication_key]["thread_pool_executor"] = self.executor
-            self.classfication_adapters[classfication_key] = build_classification_adapter(
-                self.classfication_cfgs[classfication_key]
+            self.classfication_cfgs[classfication_key]["latency_histogram"] = (
+                self.classification_latency_histogram
+            )
+            if ExecutorRegistry.validate_class(
+                self.classfication_cfgs[classfication_key]["type"]
+            ):
+                self.classfication_cfgs[classfication_key]["thread_pool_executor"] = (
+                    self.executor
+                )
+            self.classfication_adapters[classfication_key] = (
+                build_classification_adapter(self.classfication_cfgs[classfication_key])
             )
 
         self.reaction_adapters: Dict[str, ReactionAdapter] = dict()
@@ -273,10 +303,16 @@ class Proxy(Super):
         for reaction_key, reaction_cfg in reaction_adapters.items():
             self.reaction_cfgs[reaction_key] = reaction_cfg.copy()
             self.reaction_cfgs[reaction_key]["logger_cfg"] = logger_cfg
-            self.reaction_cfgs[reaction_key]["latency_histogram"] = self.reaction_latency_histogram
-            if ExecutorRegistry.validate_class(self.reaction_cfgs[reaction_key]["type"]):
+            self.reaction_cfgs[reaction_key]["latency_histogram"] = (
+                self.reaction_latency_histogram
+            )
+            if ExecutorRegistry.validate_class(
+                self.reaction_cfgs[reaction_key]["type"]
+            ):
                 self.reaction_cfgs[reaction_key]["thread_pool_executor"] = self.executor
-            self.reaction_adapters[reaction_key] = build_reaction_adapter(self.reaction_cfgs[reaction_key])
+            self.reaction_adapters[reaction_key] = build_reaction_adapter(
+                self.reaction_cfgs[reaction_key]
+            )
 
         self.conversation_aggregator_cfg = conversation_aggregator_cfg.copy()
         self.conversation_aggregator_cfg["logger_cfg"] = logger_cfg
@@ -290,19 +326,25 @@ class Proxy(Super):
         self.tts_reaction_aggregator_cfg["logger_cfg"] = logger_cfg
         if ExecutorRegistry.validate_class(self.tts_reaction_aggregator_cfg["type"]):
             self.tts_reaction_aggregator_cfg["thread_pool_executor"] = self.executor
-        self.tts_reaction_aggregator: TTSReactionAggregator = build_aggregator(self.tts_reaction_aggregator_cfg)
+        self.tts_reaction_aggregator: TTSReactionAggregator = build_aggregator(
+            self.tts_reaction_aggregator_cfg
+        )
 
         self.blendshapes_aggregator_cfg = blendshapes_aggregator_cfg.copy()
         self.blendshapes_aggregator_cfg["logger_cfg"] = logger_cfg
         if ExecutorRegistry.validate_class(self.blendshapes_aggregator_cfg["type"]):
             self.blendshapes_aggregator_cfg["thread_pool_executor"] = self.executor
-        self.blendshapes_aggregator: BlendshapesAggregator = build_aggregator(self.blendshapes_aggregator_cfg)
+        self.blendshapes_aggregator: BlendshapesAggregator = build_aggregator(
+            self.blendshapes_aggregator_cfg
+        )
 
         self.callback_aggregator_cfg = callback_aggregator_cfg.copy()
         self.callback_aggregator_cfg["logger_cfg"] = logger_cfg
         if ExecutorRegistry.validate_class(self.callback_aggregator_cfg["type"]):
             self.callback_aggregator_cfg["thread_pool_executor"] = self.executor
-        self.callback_aggregator: CallbackAggregator = build_aggregator(self.callback_aggregator_cfg)
+        self.callback_aggregator: CallbackAggregator = build_aggregator(
+            self.callback_aggregator_cfg
+        )
 
         self.db_config_cfg = db_config_cfg.copy()
         self.db_config_cfg["logger_cfg"] = logger_cfg
@@ -455,7 +497,10 @@ class Proxy(Super):
             self.callback_aggregator,
         ]
         for streamable_instance in streamable_instances:
-            if hasattr(streamable_instance, "AVAILABLE_FOR_STREAM") and streamable_instance.AVAILABLE_FOR_STREAM:
+            if (
+                hasattr(streamable_instance, "AVAILABLE_FOR_STREAM")
+                and streamable_instance.AVAILABLE_FOR_STREAM
+            ):
                 asyncio.create_task(streamable_instance.run())
 
     async def maintain_loop(self) -> None:
@@ -541,7 +586,9 @@ class Proxy(Super):
                     read_cache = False
                 else:
                     read_cache = True
-                kwargs = dict(user_id=user_id, character_id=character_id, read_cache=read_cache)
+                kwargs = dict(
+                    user_id=user_id, character_id=character_id, read_cache=read_cache
+                )
             else:
                 kwargs = dict(
                     user_id=user_id,
@@ -566,6 +613,7 @@ class Proxy(Super):
             conf["avatar"] = character_settings["avatar"]
         else:
             character_id = user_id
+            tts_adapter_key = None
             self.logger.warning(
                 f"character_id is not provided, use user_id {user_id} as character_id, and use settings from request."
             )
@@ -578,7 +626,9 @@ class Proxy(Super):
         # for s2m, conversation, reaction
         conf["character_id"] = character_id
         if request["speech_text"].startswith("[label_expression:"):
-            label_expression = request["speech_text"].split("[label_expression:")[1].split("]")[0]
+            label_expression = (
+                request["speech_text"].split("[label_expression:")[1].split("]")[0]
+            )
             if len(label_expression) > 0:
                 conf["label_expression"] = label_expression
                 request["speech_text"] = request["speech_text"].split("]", 1)[1]
@@ -713,7 +763,9 @@ class Proxy(Super):
         if character_id is not None:
             db_config_start_time = time.time()
             if isinstance(self.db_config_client, DynamoDBRedisConfigClient):
-                kwargs = dict(user_id=user_id, character_id=character_id, read_cache=True)
+                kwargs = dict(
+                    user_id=user_id, character_id=character_id, read_cache=True
+                )
             else:
                 kwargs = dict(
                     user_id=user_id,
@@ -724,14 +776,22 @@ class Proxy(Super):
                 self.db_config_client.get_user_settings(user_id),
             )
             db_config_end_time = time.time()
-            profile_memory, cascade_memories, relationship, emotion = await asyncio.gather(
+            (
+                profile_memory,
+                cascade_memories,
+                relationship,
+                emotion,
+            ) = await asyncio.gather(
                 self.db_memory_client.get_profile_memory(character_id),
                 self.db_memory_client.get_cascade_memories(character_id),
                 self.db_memory_client.get_relationship(character_id),
                 self.db_memory_client.get_emotion(character_id),
             )
             if relationship is None:
-                relationship = (INITIAL_RELATIONSHIP_STATE["stage"], INITIAL_RELATIONSHIP_STATE["value"])
+                relationship = (
+                    INITIAL_RELATIONSHIP_STATE["stage"],
+                    INITIAL_RELATIONSHIP_STATE["value"],
+                )
             if emotion is None:
                 emotion = INITIAL_EMOTION_STATE
             db_memory_end_time = time.time()
@@ -756,21 +816,31 @@ class Proxy(Super):
             conf["voice_speed"] = character_settings["voice_speed"]
             # for classification
             classification_adapter_key = character_settings["classification_adapter"]
-            conf["classification_model_override"] = character_settings["classification_model_override"]
+            conf["classification_model_override"] = character_settings[
+                "classification_model_override"
+            ]
             # for conversation
             conversation_adapter_key = character_settings["conversation_adapter"]
-            conf["conversation_model_override"] = character_settings["conversation_model_override"]
+            conf["conversation_model_override"] = character_settings[
+                "conversation_model_override"
+            ]
             conf["user_prompt"] = character_settings["prompt"]
             conf["profile_memory"] = profile_memory
             conf["cascade_memories"] = cascade_memories
             conf["relationship"] = relationship
             # for reaction
             reaction_adapter_key = character_settings["reaction_adapter"]
-            conf["reaction_model_override"] = character_settings["reaction_model_override"]
+            conf["reaction_model_override"] = character_settings[
+                "reaction_model_override"
+            ]
             conf["emotion"] = emotion
-            conf["acquaintance_threshold"] = character_settings["acquaintance_threshold"]
+            conf["acquaintance_threshold"] = character_settings[
+                "acquaintance_threshold"
+            ]
             conf["friend_threshold"] = character_settings["friend_threshold"]
-            conf["situationship_threshold"] = character_settings["situationship_threshold"]
+            conf["situationship_threshold"] = character_settings[
+                "situationship_threshold"
+            ]
             conf["lover_threshold"] = character_settings["lover_threshold"]
             conf["neutral_threshold"] = character_settings["neutral_threshold"]
             conf["happiness_threshold"] = character_settings["happiness_threshold"]
@@ -806,7 +876,9 @@ class Proxy(Super):
             # for s2m
             conf["avatar"] = request["avatar"]
         conf["character_id"] = character_id
-        conf["style_list"] = self.style_dict.get(conf["voice_name"], self.style_dict["others"])
+        conf["style_list"] = self.style_dict.get(
+            conf["voice_name"], self.style_dict["others"]
+        )
         graph = DirectedAcyclicGraph(
             name="audio_chat_with_text_llm_v4",
             conf=conf,
@@ -1090,7 +1162,9 @@ class Proxy(Super):
         if character_id is not None:
             db_config_start_time = time.time()
             if isinstance(self.db_config_client, DynamoDBRedisConfigClient):
-                kwargs = dict(user_id=user_id, character_id=character_id, read_cache=True)
+                kwargs = dict(
+                    user_id=user_id, character_id=character_id, read_cache=True
+                )
             else:
                 kwargs = dict(
                     user_id=user_id,
@@ -1101,14 +1175,22 @@ class Proxy(Super):
                 self.db_config_client.get_user_settings(user_id),
             )
             db_config_end_time = time.time()
-            profile_memory, cascade_memories, relationship, emotion = await asyncio.gather(
+            (
+                profile_memory,
+                cascade_memories,
+                relationship,
+                emotion,
+            ) = await asyncio.gather(
                 self.db_memory_client.get_profile_memory(character_id),
                 self.db_memory_client.get_cascade_memories(character_id),
                 self.db_memory_client.get_relationship(character_id),
                 self.db_memory_client.get_emotion(character_id),
             )
             if relationship is None:
-                relationship = (INITIAL_RELATIONSHIP_STATE["stage"], INITIAL_RELATIONSHIP_STATE["value"])
+                relationship = (
+                    INITIAL_RELATIONSHIP_STATE["stage"],
+                    INITIAL_RELATIONSHIP_STATE["value"],
+                )
             if emotion is None:
                 emotion = INITIAL_EMOTION_STATE
             db_memory_end_time = time.time()
@@ -1125,10 +1207,17 @@ class Proxy(Super):
             conf["memory_adapter"] = self.memory_adapters[memory_adapter_key]
             conf["memory_db_client"] = self.db_memory_client
             conf["memory_model_override"] = character_settings["memory_model_override"]
+            # for tts fallback
+            tts_adapter_key = character_settings["tts_adapter"]
+            conf["voice_name"] = character_settings["voice"]
+            conf["voice_speed"] = character_settings.get("voice_speed", 1.0)
             # for conversation
             conf["conversation_voice_name"] = character_settings["voice"]
             audio_conversation_adapter_key = character_settings["conversation_adapter"]
-            conf["conversation_model_override"] = character_settings["conversation_model_override"]
+            conf["conversation_model_override"] = character_settings[
+                "conversation_model_override"
+            ]
+            conf["character_name"] = character_settings.get("character_name", "")
             conf["user_prompt"] = character_settings["prompt"]
             conf["profile_memory"] = profile_memory
             conf["cascade_memories"] = cascade_memories
@@ -1145,9 +1234,12 @@ class Proxy(Super):
             memory_adapter_key = request["memory_adapter"]
             conf["memory_adapter"] = self.memory_adapters[memory_adapter_key]
             conf["memory_db_client"] = self.db_memory_client
+            conf["voice_name"] = request["voice"]
+            conf["voice_speed"] = 1.0
             # for conversation
             conf["conversation_voice_name"] = request["voice"]
             audio_conversation_adapter_key = request["conversation_adapter"]
+            conf["character_name"] = request.get("character_name", "")
             # for s2m
             conf["avatar"] = request["avatar"]
         conf["character_id"] = character_id
@@ -1168,7 +1260,19 @@ class Proxy(Super):
             pb_response_bytes = pb_response.SerializeToString()
             await callback_bytes_fn(pb_response_bytes)
             raise AdapterNotFoundError(msg)
-        audio_conversation_adapter = self.conversation_adapters[audio_conversation_adapter_key]
+        if tts_adapter_key is not None and tts_adapter_key not in self.tts_adapters:
+            msg = f"TTS adapter {tts_adapter_key} not found, please choose among {list(self.tts_adapters.keys())}."
+            self.logger.error(msg)
+            pb_response = orchestrator_pb2.OrchestratorV4Response()
+            pb_response.class_name = "FailedResponse"
+            pb_response.message = msg
+            pb_response_bytes = pb_response.SerializeToString()
+            await callback_bytes_fn(pb_response_bytes)
+            raise AdapterNotFoundError(msg)
+        conf["fallback_tts_adapter"] = self.tts_adapters.get(tts_adapter_key)
+        audio_conversation_adapter = self.conversation_adapters[
+            audio_conversation_adapter_key
+        ]
         audio_conversation_node = DAGNode(
             name="audio_conversation_node",
             payload=audio_conversation_adapter,
@@ -1273,7 +1377,9 @@ class Proxy(Super):
             raise RunningDAGNotFoundError(msg)
         graph = self.running_dags[request_id]
         audio_conversation_node = graph.get_node("audio_conversation_node")
-        await audio_conversation_node.payload.feed_stream(AudioChunkEnd(request_id=request_id))
+        await audio_conversation_node.payload.feed_stream(
+            AudioChunkEnd(request_id=request_id)
+        )
 
     async def text_chat_with_text_llm_v4(
         self,
@@ -1335,7 +1441,9 @@ class Proxy(Super):
                     read_cache = False
                 else:
                     read_cache = True
-                kwargs = dict(user_id=user_id, character_id=character_id, read_cache=read_cache)
+                kwargs = dict(
+                    user_id=user_id, character_id=character_id, read_cache=read_cache
+                )
             else:
                 kwargs = dict(
                     user_id=user_id,
@@ -1346,7 +1454,12 @@ class Proxy(Super):
                 self.db_config_client.get_user_settings(user_id),
             )
             db_config_end_time = time.time()
-            profile_memory, cascade_memories, relationship, emotion = await asyncio.gather(
+            (
+                profile_memory,
+                cascade_memories,
+                relationship,
+                emotion,
+            ) = await asyncio.gather(
                 self.db_memory_client.get_profile_memory(character_id),
                 self.db_memory_client.get_cascade_memories(character_id),
                 self.db_memory_client.get_relationship(character_id),
@@ -1379,21 +1492,31 @@ class Proxy(Super):
             conf["voice_speed"] = character_settings["voice_speed"]
             # for classification
             classification_adapter_key = character_settings["classification_adapter"]
-            conf["classification_model_override"] = character_settings["classification_model_override"]
+            conf["classification_model_override"] = character_settings[
+                "classification_model_override"
+            ]
             # for conversation
             conversation_adapter_key = character_settings["conversation_adapter"]
-            conf["conversation_model_override"] = character_settings["conversation_model_override"]
+            conf["conversation_model_override"] = character_settings[
+                "conversation_model_override"
+            ]
             conf["user_prompt"] = character_settings["prompt"]
             conf["profile_memory"] = profile_memory
             conf["cascade_memories"] = cascade_memories
             conf["relationship"] = relationship
             # for reaction
             reaction_adapter_key = character_settings["reaction_adapter"]
-            conf["reaction_model_override"] = character_settings["reaction_model_override"]
+            conf["reaction_model_override"] = character_settings[
+                "reaction_model_override"
+            ]
             conf["emotion"] = emotion
-            conf["acquaintance_threshold"] = character_settings["acquaintance_threshold"]
+            conf["acquaintance_threshold"] = character_settings[
+                "acquaintance_threshold"
+            ]
             conf["friend_threshold"] = character_settings["friend_threshold"]
-            conf["situationship_threshold"] = character_settings["situationship_threshold"]
+            conf["situationship_threshold"] = character_settings[
+                "situationship_threshold"
+            ]
             conf["lover_threshold"] = character_settings["lover_threshold"]
             conf["neutral_threshold"] = character_settings["neutral_threshold"]
             conf["happiness_threshold"] = character_settings["happiness_threshold"]
@@ -1427,7 +1550,9 @@ class Proxy(Super):
             # for s2m
             conf["avatar"] = request["avatar"]
         conf["character_id"] = character_id
-        conf["style_list"] = self.style_dict.get(conf["voice_name"], self.style_dict["others"])
+        conf["style_list"] = self.style_dict.get(
+            conf["voice_name"], self.style_dict["others"]
+        )
         graph = DirectedAcyclicGraph(
             name="text_chat_with_text_llm_v4",
             conf=conf,
@@ -1655,7 +1780,9 @@ class Proxy(Super):
                     read_cache = False
                 else:
                     read_cache = True
-                kwargs = dict(user_id=user_id, character_id=character_id, read_cache=read_cache)
+                kwargs = dict(
+                    user_id=user_id, character_id=character_id, read_cache=read_cache
+                )
             else:
                 kwargs = dict(
                     user_id=user_id,
@@ -1666,7 +1793,12 @@ class Proxy(Super):
                 self.db_config_client.get_user_settings(user_id),
             )
             db_config_end_time = time.time()
-            profile_memory, cascade_memories, relationship, emotion = await asyncio.gather(
+            (
+                profile_memory,
+                cascade_memories,
+                relationship,
+                emotion,
+            ) = await asyncio.gather(
                 self.db_memory_client.get_profile_memory(character_id),
                 self.db_memory_client.get_cascade_memories(character_id),
                 self.db_memory_client.get_relationship(character_id),
@@ -1698,7 +1830,9 @@ class Proxy(Super):
             conf["conversation_voice_name"] = character_settings["voice"]
             # for conversation
             conversation_adapter_key = character_settings["conversation_adapter"]
-            conf["conversation_model_override"] = character_settings["conversation_model_override"]
+            conf["conversation_model_override"] = character_settings[
+                "conversation_model_override"
+            ]
             conf["user_prompt"] = character_settings["prompt"]
             conf["profile_memory"] = profile_memory
             conf["cascade_memories"] = cascade_memories
@@ -1817,7 +1951,9 @@ class Proxy(Super):
         await tts_node.payload.feed_stream(text_chunk_end)
         return graph, request_id
 
-    async def get_voice_settings(self, user_id: str, character_id: str) -> Dict[str, Any]:
+    async def get_voice_settings(
+        self, user_id: str, character_id: str
+    ) -> Dict[str, Any]:
         """Get voice settings for a specific character.
 
         Args:
@@ -1832,7 +1968,9 @@ class Proxy(Super):
         """
         return await self.db_config_client.get_voice_settings(user_id, character_id)
 
-    async def get_motion_settings(self, user_id: str, character_id: str) -> Dict[str, Any]:
+    async def get_motion_settings(
+        self, user_id: str, character_id: str
+    ) -> Dict[str, Any]:
         """Get motion settings for a specific character.
 
         Args:
@@ -1883,7 +2021,9 @@ class Proxy(Super):
                 Returns empty list if no emotion scores are found for the character.
         """
         emotion_scores = await self.db_memory_client.get_emotion(character_id)
-        emotion_thresholds = await self.db_config_client.get_character_settings(user_id, character_id)
+        emotion_thresholds = await self.db_config_client.get_character_settings(
+            user_id, character_id
+        )
         emotions = (
             get_emotion_list(
                 happiness_score=emotion_scores["happiness"],
@@ -1914,7 +2054,10 @@ class Proxy(Super):
             List[str]:
                 List of available ASR adapter names.
         """
-        return list(self.asr_adapters.keys())
+        deprecated_aliases = {"huoshan"}
+        return [
+            key for key in self.asr_adapters.keys() if key not in deprecated_aliases
+        ]
 
     async def get_tts_adapter_choices(self) -> List[str]:
         """Get available TTS adapter choices.
@@ -1923,7 +2066,10 @@ class Proxy(Super):
             List[str]:
                 List of available TTS adapter names.
         """
-        return list(self.tts_adapters.keys())
+        deprecated_aliases = {"huoshan", "huoshan_icl"}
+        return [
+            key for key in self.tts_adapters.keys() if key not in deprecated_aliases
+        ]
 
     async def get_tts_voice_names(self, tts_adapter_key: str) -> Dict[str, Any]:
         """Get available voice names for a specific TTS adapter.

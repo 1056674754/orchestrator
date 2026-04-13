@@ -69,3 +69,7 @@ class QwenConversationClient(OpenAIConversationClient):
             http_client=self.http_client,
             timeout=self.request_timeout,
         )
+
+    def _get_completion_extra_body(self) -> Dict[str, Any]:
+        """Disable DashScope thinking mode for realtime conversation."""
+        return {"enable_thinking": False}

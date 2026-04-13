@@ -1,4 +1,5 @@
 import asyncio
+import time
 import traceback
 import wave
 from concurrent.futures import ThreadPoolExecutor
@@ -134,6 +135,8 @@ class CallbackAggregator(Streamable):
                 body_sent_counter=dict(),
                 start_sent=set(),
                 end_sent=set(),
+                first_response_sent=False,
+                first_audio_body_sent=False,
                 motion_byte_rate=None,
                 face_byte_rate=None,
             )
@@ -462,6 +465,27 @@ class CallbackAggregator(Streamable):
                 self.logger.debug(verbose_msg)
             await callback_bytes_fn(pb_response_bytes)
             self.input_buffer[request_id]["body_sent_counter"][chunk_type] += 1
+            dag_start_time = self.input_buffer[request_id]["dag"].conf.get("start_time", None)
+            since_dag_start = time.time() - dag_start_time if dag_start_time is not None else None
+            if (
+                isinstance(chunk, ClassificationChunkBody)
+                and not self.input_buffer[request_id]["first_response_sent"]
+            ):
+                self.input_buffer[request_id]["first_response_sent"] = True
+                self.logger.info(
+                    "First response envelope sent to callback for request %s: classification=%s%s",
+                    request_id,
+                    chunk.classification_result,
+                    f", since_dag_start={since_dag_start:.3f}s" if since_dag_start is not None else "",
+                )
+            elif isinstance(chunk, AudioChunkBody) and not self.input_buffer[request_id]["first_audio_body_sent"]:
+                self.input_buffer[request_id]["first_audio_body_sent"] = True
+                self.logger.info(
+                    "First audio chunk sent to callback for request %s: seq=%d%s",
+                    request_id,
+                    seq_number,
+                    f", since_dag_start={since_dag_start:.3f}s" if since_dag_start is not None else "",
+                )
         except Exception as e:
             traceback_str = traceback.format_exc()
             self.logger.error(f"Error sending body chunk to callback: {e}\nTraceback:\n{traceback_str}")

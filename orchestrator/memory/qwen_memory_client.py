@@ -43,6 +43,10 @@ class QwenMemoryClient(OpenAIMemoryClient):
         )
         self.qwen_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
+    def _get_completion_extra_body(self) -> Dict[str, Any]:
+        """Disable DashScope thinking mode for memory jobs."""
+        return {"enable_thinking": False}
+
     async def call_llm(
         self,
         system_prompt: str,

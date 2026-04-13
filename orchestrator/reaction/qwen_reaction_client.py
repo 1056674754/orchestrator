@@ -43,3 +43,7 @@ class QwenReactionClient(OpenAIReactionClient):
             http_client=self.http_client,
             timeout=self.timeout,
         )
+
+    def _get_completion_extra_body(self) -> Dict[str, Any]:
+        """Disable DashScope thinking mode for background reaction analysis."""
+        return {"enable_thinking": False}

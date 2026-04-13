@@ -153,11 +153,15 @@ class ConversationAggregator(Streamable):
         if chunk_class_str == "ClassificationChunkBody":
             classification_chunk = cast(ClassificationChunkBody, chunk)
             self.input_buffer[request_id]["classification_result"] = classification_chunk.classification_result
+            dag_start_time = self.input_buffer[request_id].get("dag_start_time", None)
+            since_dag_start = cur_time - dag_start_time if dag_start_time is not None else None
 
             asyncio.create_task(self._send_stream_start_task(request_id))
 
             if classification_chunk.classification_result == ClassificationType.REJECT:
                 msg = f"Received reject signal from classification, request id: {request_id}"
+                if since_dag_start is not None:
+                    msg += f", since_dag_start={since_dag_start:.3f}s"
                 self.logger.info(msg)
                 if self.input_buffer[request_id]["reject_segments"]:
                     while not self.input_buffer[request_id]["stream_start_sent"]:
@@ -169,9 +173,13 @@ class ConversationAggregator(Streamable):
                     self.input_buffer[request_id]["reject_segments"] = ""
             elif classification_chunk.classification_result == ClassificationType.LEAVE:
                 msg = f"Received leave signal from classification, request id: {request_id}"
+                if since_dag_start is not None:
+                    msg += f", since_dag_start={since_dag_start:.3f}s"
                 self.logger.info(msg)
             elif classification_chunk.classification_result == ClassificationType.ACCEPT:
                 msg = f"Received accept signal from classification, request id: {request_id}"
+                if since_dag_start is not None:
+                    msg += f", since_dag_start={since_dag_start:.3f}s"
                 self.logger.info(msg)
                 if self.input_buffer[request_id]["chat_segments"]:
                     while not self.input_buffer[request_id]["stream_start_sent"]:

@@ -87,6 +87,10 @@ class OpenAIReactionClient(ReactionAdapter):
             timeout=self.timeout,
         )
 
+    def _get_completion_extra_body(self) -> Optional[Dict[str, Any]]:
+        """Return provider-specific extra request fields."""
+        return None
+
     async def get_reaction_delta(
         self,
         request_id: str,
@@ -164,7 +168,7 @@ class OpenAIReactionClient(ReactionAdapter):
             user_message = "\n".join(user_message_parts)
 
             start_time = time.time()
-            response = await llm_client.chat.completions.create(
+            request_kwargs: Dict[str, Any] = dict(
                 model=openai_model_name,
                 messages=[
                     {"role": "system", "content": prompt},
@@ -173,6 +177,10 @@ class OpenAIReactionClient(ReactionAdapter):
                 temperature=1,
                 response_format=response_format,  # type: ignore
             )
+            extra_body = self._get_completion_extra_body()
+            if extra_body:
+                request_kwargs["extra_body"] = extra_body
+            response = await llm_client.chat.completions.create(**request_kwargs)
             response_delta = json.loads(response.choices[0].message.content)  # type: ignore
             response_delta["speech_text"] = text
             self.logger.debug(

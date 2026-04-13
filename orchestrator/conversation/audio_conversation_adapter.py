@@ -167,6 +167,7 @@ class AudioConversationAdapter(Streamable, ABC):
         voice_name = conf["conversation_voice_name"]
         language = conf.get("language", "zh")
         character_id = conf.get("character_id", None)
+        character_name = conf.get("character_name", "")
         profile_memory = conf.get("profile_memory", None)
         cascade_memories = conf.get("cascade_memories", None)
         emotion = conf.get("emotion")
@@ -187,6 +188,7 @@ class AudioConversationAdapter(Streamable, ABC):
             "api_keys": api_keys,
             "user_id": user_id,
             "character_id": character_id,
+            "character_name": character_name,
             "profile_memory": profile_memory,
             "cascade_memories": cascade_memories,
             "relationship": relationship,
@@ -200,7 +202,11 @@ class AudioConversationAdapter(Streamable, ABC):
             "chunk_sent": 0,
             "input_chunk_received": 0,
             "input_chunk_sent": 0,
+            "input_audio_bytes_received": 0,
+            "input_first_chunk_time": None,
+            "input_last_chunk_time": None,
             "callback_bytes_fn": callback_bytes_fn,
+            "failure_callback_sent": False,
             "timezone": timezone,
         }
         if chunk.audio_type == "pcm":
@@ -242,6 +248,7 @@ class AudioConversationAdapter(Streamable, ABC):
                 callback_bytes_fn = self.input_buffer[request_id].get("callback_bytes_fn")
                 if callback_bytes_fn:
                     await failure_callback(msg, callback_bytes_fn)
+                    self.input_buffer[request_id]["failure_callback_sent"] = True
             else:
                 self.logger.warning(f"Request {request_id} not found in input buffer")
         except Exception as e:
@@ -272,6 +279,10 @@ class AudioConversationAdapter(Streamable, ABC):
         seq_number = self.input_buffer[request_id]["input_chunk_received"]
         self.input_buffer[request_id]["input_chunk_received"] += 1
         audio_bytes = chunk.audio_io.read()
+        self.input_buffer[request_id]["input_audio_bytes_received"] += len(audio_bytes)
+        if self.input_buffer[request_id]["input_first_chunk_time"] is None:
+            self.input_buffer[request_id]["input_first_chunk_time"] = cur_time
+        self.input_buffer[request_id]["input_last_chunk_time"] = cur_time
         asyncio.create_task(self._send_audio(request_id, audio_bytes, seq_number))
 
     async def _handle_end(
@@ -296,6 +307,28 @@ class AudioConversationAdapter(Streamable, ABC):
             self.logger.error(msg)
             raise ChunkWithoutStartError(msg)
         self.input_buffer[request_id]["last_update_time"] = cur_time
+        request_state = self.input_buffer[request_id]
+        sample_width = request_state.get("sample_width", self.__class__.SAMPLE_WIDTH)
+        n_channels = request_state.get("n_channels", self.__class__.N_CHANNELS)
+        frame_rate = request_state.get("frame_rate", self.__class__.FRAME_RATE)
+        total_bytes = request_state.get("input_audio_bytes_received", 0)
+        estimated_audio_seconds = 0.0
+        denominator = sample_width * n_channels * frame_rate
+        if denominator > 0:
+            estimated_audio_seconds = total_bytes / denominator
+        first_chunk_time = request_state.get("input_first_chunk_time")
+        last_chunk_time = request_state.get("input_last_chunk_time")
+        span_seconds = None
+        if first_chunk_time is not None and last_chunk_time is not None:
+            span_seconds = max(0.0, last_chunk_time - first_chunk_time)
+        self.logger.info(
+            "Audio conversation upstream end for request %s: chunks=%s, bytes=%s, estimated_audio=%.3fs%s",
+            request_id,
+            request_state.get("input_chunk_received", 0),
+            total_bytes,
+            estimated_audio_seconds,
+            f", first_to_last_chunk={span_seconds:.3f}s" if span_seconds is not None else "",
+        )
         asyncio.create_task(self._commit_audio(request_id))
 
     @abstractmethod
